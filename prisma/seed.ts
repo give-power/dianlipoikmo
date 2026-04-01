@@ -51,6 +51,16 @@ async function main() {
     ],
   });
 
+  // Seed projects
+  const projectData = [
+    { name: "汇龙配电所改造", code: "HLD-001", budget: 280000, spent: 134000, profitRate: 19.2, status: "active" },
+    { name: "下马坪10kV主线", code: "XMP-002", budget: 196000, spent: 89000, profitRate: 17.1, status: "active" },
+    { name: "铁画溪开关站",   code: "THS-003", budget: 340000, spent: 0,      profitRate: 0,    status: "pending" },
+  ];
+  for (const p of projectData) {
+    await prisma.project.upsert({ where: { code: p.code }, update: p, create: p });
+  }
+
   console.log("Seed completed.");
 }
 
