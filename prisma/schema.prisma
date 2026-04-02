@@ -1,6 +1,6 @@
 generator client {
   provider      = "prisma-client-js"
-  binaryTargets = ["native", "rhel-openssl-1.0.x", "rhel-openssl-3.0.x"]
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
@@ -39,6 +39,7 @@ model Report {
   photoPath   String?
   status      String       @default("pending")
   createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @default(now()) @updatedAt
   corrections Correction[]
 }
 
@@ -50,6 +51,7 @@ model Visa {
   project   String   @default("汇龙配电所改造")
   status    String   @default("pending")
   createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 }
 
 model Correction {
@@ -64,6 +66,7 @@ model Correction {
   report     Report?  @relation(fields: [reportId], references: [id])
   status     String   @default("pending")
   createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
 }
 
 model Project {

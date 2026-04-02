@@ -53,8 +53,15 @@ export default function WorkersPage() {
     if (!confirm("确认删除该工人？此操作无法撤销。")) return;
     setDeletingId(id);
     try {
-      await fetch(`/api/workers/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/workers/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error ?? "删除失败，请重试");
+        return;
+      }
       setWorkers((prev) => prev.filter((w) => w.id !== id));
+    } catch {
+      alert("删除失败，请检查网络连接后重试");
     } finally {
       setDeletingId(null);
     }

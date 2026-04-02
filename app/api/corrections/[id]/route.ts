@@ -12,33 +12,42 @@ export async function PATCH(
     return Response.json({ error: "Invalid status" }, { status: 400 });
   }
 
-  const correction = await prisma.correction.update({
-    where: { id: Number(id) },
-    data: { status },
-  });
+  try {
+    // RC6: wrap correction update + report update in a single transaction
+    const result = await prisma.$transaction(async (tx) => {
+      const correction = await tx.correction.update({
+        where: { id: Number(id) },
+        data: { status },
+      });
 
-  // If approved and linked to a report, apply the correction to that report
-  if (status === "approved" && correction.reportId) {
-    try {
-      const parsed = JSON.parse(correction.corrected) as {
-        task?: string;
-        spec?: string;
-        qty?: string;
-      };
-      const updateData: { task?: string; spec?: string; qty?: string } = {};
-      if (parsed.task) updateData.task = parsed.task;
-      if (parsed.spec) updateData.spec = parsed.spec;
-      if (parsed.qty) updateData.qty = parsed.qty;
-      if (Object.keys(updateData).length > 0) {
-        await prisma.report.update({
-          where: { id: correction.reportId },
-          data: updateData,
-        });
+      if (status === "approved" && correction.reportId) {
+        try {
+          const parsed = JSON.parse(correction.corrected) as {
+            task?: string;
+            spec?: string;
+            qty?: string;
+          };
+          const updateData: { task?: string; spec?: string; qty?: string } = {};
+          if (parsed.task) updateData.task = parsed.task;
+          if (parsed.spec) updateData.spec = parsed.spec;
+          if (parsed.qty) updateData.qty = parsed.qty;
+          if (Object.keys(updateData).length > 0) {
+            await tx.report.update({
+              where: { id: correction.reportId },
+              data: updateData,
+            });
+          }
+        } catch {
+          // corrected is plain text (legacy) — no report fields to apply
+        }
       }
-    } catch {
-      // corrected is plain text (legacy) — no report update needed
-    }
-  }
 
-  return Response.json(correction);
+      return correction;
+    });
+
+    return Response.json(result);
+  } catch (e) {
+    console.error("correction PATCH error:", e);
+    return Response.json({ error: "更新失败，请稍后重试" }, { status: 500 });
+  }
 }

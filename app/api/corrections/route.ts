@@ -16,10 +16,14 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Missing required fields" }, { status: 400 });
   }
 
+  // RH1: validate worker exists
+  const worker = await prisma.worker.findUnique({ where: { id: workerId } });
+  if (!worker) return Response.json({ error: "工人不存在" }, { status: 404 });
+
   const correction = await prisma.correction.create({
     data: {
       workerId,
-      workerName: workerName ?? workerId,
+      workerName: workerName ?? worker.name,
       original,
       corrected,
       reason,

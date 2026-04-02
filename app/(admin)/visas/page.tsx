@@ -25,6 +25,7 @@ const STATUS_MAP = {
 export default function VisasPage() {
   const [visas, setVisas] = useState<Visa[]>([]);
   const [loading, setLoading] = useState(true);
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -42,15 +43,22 @@ export default function VisasPage() {
   }, [fetchAll]);
 
   const update = async (id: number, status: "approved" | "rejected") => {
+    setUpdateError(null);
+    // Optimistic update
     setVisas((prev) => prev.map((v) => (v.id === id ? { ...v, status } : v)));
     try {
-      await fetch(`/api/visas/${id}`, {
+      const res = await fetch(`/api/visas/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
-    } catch {
-      fetchAll();
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "操作失败");
+      }
+    } catch (e) {
+      setUpdateError(e instanceof Error ? e.message : "操作失败，请重试");
+      fetchAll(); // revert optimistic update
     }
   };
 
@@ -78,6 +86,16 @@ export default function VisasPage() {
       </div>
 
       <div className="px-8 py-6 space-y-3">
+        {/* Error banner */}
+        {updateError && (
+          <div
+            className="rounded-xl px-5 py-3 flex justify-between items-center"
+            style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}
+          >
+            <span className="text-sm" style={{ color: "#ef4444" }}>{updateError}</span>
+            <button onClick={() => setUpdateError(null)} className="text-xs" style={{ color: "var(--muted)" }}>✕</button>
+          </div>
+        )}
         {/* Pending total banner */}
         {!loading && pending.length > 0 && (
           <div

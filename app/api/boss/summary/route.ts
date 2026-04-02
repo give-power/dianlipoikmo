@@ -1,18 +1,25 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { rateLimit } from "@/lib/rate-limit";
 
-export async function POST(_req: NextRequest) {
+export async function POST(req: NextRequest) {
+  // RH5: rate limit — 5 req/min per IP
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
+  if (!rateLimit(ip, 5, 60_000)) {
+    return Response.json({ content: "请求过于频繁，请稍后再试" }, { status: 429 });
+  }
+
   try {
     if (!process.env.VOLC_API_KEY) {
       return Response.json({ content: "AI 服务未配置" }, { status: 500 });
     }
 
-    // Fetch real data
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // RH4: UTC day boundary
+    const todayUTC = new Date();
+    todayUTC.setUTCHours(0, 0, 0, 0);
 
     const [checkIns, reports, visas, corrections] = await Promise.all([
-      prisma.checkIn.findMany({ where: { createdAt: { gte: today } }, include: { worker: true } }),
+      prisma.checkIn.findMany({ where: { createdAt: { gte: todayUTC } }, include: { worker: true } }),
       prisma.report.findMany({ orderBy: { createdAt: "desc" }, take: 20 }),
       prisma.visa.findMany({ where: { status: "pending" } }),
       prisma.correction.findMany({ where: { status: "pending" } }),

@@ -27,6 +27,7 @@ const STATUS_MAP = {
 export default function CorrectionsPage() {
   const [items, setItems] = useState<Correction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -44,16 +45,22 @@ export default function CorrectionsPage() {
   }, [fetchAll]);
 
   const update = async (id: number, status: "approved" | "rejected") => {
+    setUpdateError(null);
     // Optimistic update
     setItems((prev) => prev.map((c) => (c.id === id ? { ...c, status } : c)));
     try {
-      await fetch(`/api/corrections/${id}`, {
+      const res = await fetch(`/api/corrections/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
-    } catch {
-      fetchAll(); // Revert on error
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "操作失败");
+      }
+    } catch (e) {
+      setUpdateError(e instanceof Error ? e.message : "操作失败，请重试");
+      fetchAll(); // Revert optimistic update
     }
   };
 
@@ -83,6 +90,16 @@ export default function CorrectionsPage() {
       </div>
 
       <div className="px-8 py-6 space-y-3">
+        {/* Error banner */}
+        {updateError && (
+          <div
+            className="rounded-xl px-5 py-3 flex justify-between items-center"
+            style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}
+          >
+            <span className="text-sm" style={{ color: "#ef4444" }}>{updateError}</span>
+            <button onClick={() => setUpdateError(null)} className="text-xs" style={{ color: "var(--muted)" }}>✕</button>
+          </div>
+        )}
         {/* Loading */}
         {loading && (
           <div className="flex items-center justify-center py-20">

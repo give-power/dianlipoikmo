@@ -3,7 +3,7 @@ import { useRouter } from "next/navigation";
 
 const roles = [
   {
-    href: "/dashboard",
+    href: "/admin/dashboard",
     title: "管理后台",
     desc: "财务核算 / 看板",
     color: "#3b82f6",

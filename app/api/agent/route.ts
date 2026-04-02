@@ -1,20 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { rateLimit } from "@/lib/rate-limit";
 
 export async function POST(req: NextRequest) {
+  // RH5: rate limit — 30 req/min per IP
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
+  if (!rateLimit(ip, 30, 60_000)) {
+    return NextResponse.json({ error: "请求过于频繁，请稍后再试" }, { status: 429 });
+  }
+
   try {
     const { messages } = await req.json();
     if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json({ error: "messages required" }, { status: 400 });
     }
 
-    // Build real-time context from DB
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    // RH4: UTC day boundary
+    const todayUTC = new Date();
+    todayUTC.setUTCHours(0, 0, 0, 0);
 
     const [checkins, reports, visas, corrections, projects] = await Promise.all([
       prisma.checkIn.findMany({
-        where: { createdAt: { gte: todayStart } },
+        where: { createdAt: { gte: todayUTC } },
         include: { worker: true },
         orderBy: { createdAt: "desc" },
       }),
@@ -27,7 +34,7 @@ export async function POST(req: NextRequest) {
       prisma.project.findMany({ orderBy: { createdAt: "asc" } }),
     ]);
 
-    const todayReports = reports.filter((r) => r.createdAt >= todayStart);
+    const todayReports = reports.filter((r) => r.createdAt >= todayUTC);
     const pendingVisas = visas.filter((v) => v.status === "pending");
     const pendingVisaTotal = pendingVisas.reduce((s, v) => s + v.amount, 0);
     const approvedVisaTotal = visas
@@ -116,7 +123,6 @@ ${pendingCorrections.slice(0, 3).map((c) => `  · ${c.workerName}：${c.original
     }
 
     const data = await response.json();
-    // Reasoning model returns reasoning_content + content; only use content
     const text =
       data.choices?.[0]?.message?.content ??
       data.choices?.[0]?.message?.reasoning_content ??

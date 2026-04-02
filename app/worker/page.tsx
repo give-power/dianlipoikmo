@@ -1,9 +1,8 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 
-type Msg = { role: "user" | "assistant"; content: string };
 type Report = { 工序: string; 规格: string; 数量: string };
-type Phase = "login" | "checkin" | "chat" | "confirm" | "done";
+type Phase = "login" | "checkin" | "form" | "confirm" | "done";
 type Worker = { id: string; name: string; project: string };
 
 type ReportRecord = {
@@ -44,7 +43,7 @@ function CorrectionModal({
     if (!reason.trim()) return;
     setSubmitting(true);
     try {
-      await fetch("/api/corrections", {
+      const res = await fetch("/api/corrections", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -56,9 +55,14 @@ function CorrectionModal({
           reportId: target.reportId,
         }),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error ?? "纠偏提交失败，请重试");
+        return;
+      }
       setDone(true);
     } catch {
-      /* non-blocking */
+      alert("纠偏提交失败，请检查网络连接后重试");
     } finally {
       setSubmitting(false);
     }
@@ -168,16 +172,11 @@ function HistoryView({ worker, onClose }: { worker: Worker; onClose: () => void 
   return (
     <>
       <div className="fixed inset-0 z-40 flex flex-col" style={{ background: "var(--bg)" }}>
-        {/* Header */}
         <div
           className="flex items-center gap-3 px-5 py-4 border-b shrink-0"
           style={{ borderColor: "var(--border)", background: "var(--surface)" }}
         >
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-xl"
-            style={{ background: "var(--bg)" }}
-          >
+          <button onClick={onClose} className="p-1.5 rounded-xl" style={{ background: "var(--bg)" }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 12H5M12 5l-7 7 7 7" />
             </svg>
@@ -190,16 +189,11 @@ function HistoryView({ worker, onClose }: { worker: Worker; onClose: () => void 
           </div>
         </div>
 
-        {/* List */}
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
           {loading ? (
             <div className="flex gap-1.5 justify-center py-16">
               {[0, 1, 2].map((i) => (
-                <div
-                  key={i}
-                  className="w-2 h-2 rounded-full animate-bounce"
-                  style={{ background: "var(--accent)", animationDelay: `${i * 0.15}s` }}
-                />
+                <div key={i} className="w-2 h-2 rounded-full animate-bounce" style={{ background: "var(--accent)", animationDelay: `${i * 0.15}s` }} />
               ))}
             </div>
           ) : records.length === 0 ? (
@@ -210,26 +204,14 @@ function HistoryView({ worker, onClose }: { worker: Worker; onClose: () => void 
             records.map((r) => {
               const s = statusMap[r.status] ?? statusMap.pending;
               return (
-                <div
-                  key={r.id}
-                  className="rounded-2xl p-4"
-                  style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
-                >
+                <div key={r.id} className="rounded-2xl p-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-mono" style={{ color: "var(--muted)" }}>
-                      {fmtDate(r.createdAt)}
-                    </span>
-                    <span
-                      className="text-xs px-2 py-0.5 rounded-full font-medium"
-                      style={{ color: s.color, background: s.bg, border: `1px solid ${s.border}` }}
-                    >
+                    <span className="text-xs font-mono" style={{ color: "var(--muted)" }}>{fmtDate(r.createdAt)}</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ color: s.color, background: s.bg, border: `1px solid ${s.border}` }}>
                       {s.label}
                     </span>
                   </div>
-                  <div
-                    className="grid grid-cols-3 gap-2 p-3 rounded-xl text-xs"
-                    style={{ background: "var(--bg)" }}
-                  >
+                  <div className="grid grid-cols-3 gap-2 p-3 rounded-xl text-xs" style={{ background: "var(--bg)" }}>
                     {([["工序", r.task], ["规格", r.spec], ["数量", r.qty]] as [string, string][]).map(([k, v]) => (
                       <div key={k}>
                         <div style={{ color: "var(--muted)" }}>{k}</div>
@@ -241,11 +223,7 @@ function HistoryView({ worker, onClose }: { worker: Worker; onClose: () => void 
                     <button
                       onClick={() => setCorrTarget({ reportId: r.id, task: r.task, spec: r.spec, qty: r.qty })}
                       className="mt-3 w-full py-2 rounded-xl text-xs font-medium transition-all active:scale-95"
-                      style={{
-                        background: "rgba(245,158,11,0.08)",
-                        border: "1px solid rgba(245,158,11,0.2)",
-                        color: "var(--amber)",
-                      }}
+                      style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)", color: "var(--amber)" }}
                     >
                       申请纠偏
                     </button>
@@ -258,11 +236,7 @@ function HistoryView({ worker, onClose }: { worker: Worker; onClose: () => void 
       </div>
 
       {corrTarget && (
-        <CorrectionModal
-          target={corrTarget}
-          worker={worker}
-          onClose={() => setCorrTarget(null)}
-        />
+        <CorrectionModal target={corrTarget} worker={worker} onClose={() => setCorrTarget(null)} />
       )}
     </>
   );
@@ -386,15 +360,22 @@ function CheckInScreen({
   const handleCheckIn = async () => {
     setChecking(true);
     try {
-      await fetch("/api/checkin", {
+      const res = await fetch("/api/checkin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ workerId: worker.id, project: worker.project }),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error ?? "打卡失败，请重试");
+        return;
+      }
+      onCheckIn();
     } catch {
-      /* non-blocking */
+      alert("打卡失败，请检查网络连接后重试");
+    } finally {
+      setChecking(false);
     }
-    onCheckIn();
   };
 
   return (
@@ -413,7 +394,6 @@ function CheckInScreen({
         <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>{worker.project} · {worker.id}</p>
       </div>
 
-      {/* Today status banner */}
       {todayStatus && (
         <div
           className="w-full max-w-xs rounded-2xl px-4 py-3.5"
@@ -424,10 +404,7 @@ function CheckInScreen({
           }
         >
           <div className="flex items-center gap-2 mb-2">
-            <span
-              className="w-1.5 h-1.5 rounded-full"
-              style={{ background: todayStatus.checkedIn ? "var(--green)" : "var(--muted)" }}
-            />
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: todayStatus.checkedIn ? "var(--green)" : "var(--muted)" }} />
             <span className="text-xs font-medium" style={{ color: todayStatus.checkedIn ? "var(--green)" : "var(--muted)" }}>
               {todayStatus.checkedIn ? `今天 ${todayStatus.checkinTime} 已打卡` : "今天尚未打卡"}
             </span>
@@ -444,18 +421,6 @@ function CheckInScreen({
         </div>
       )}
 
-      <div
-        className="flex items-center gap-3 px-5 py-3 rounded-xl w-full max-w-xs"
-        style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)" }}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" strokeWidth="2">
-          <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-        </svg>
-        <span className="text-sm" style={{ color: "var(--amber)" }}>
-          GPS 模拟中 · 高德围栏接入后生效
-        </span>
-      </div>
-
       <div className="w-full max-w-xs space-y-3">
         <button
           onClick={handleCheckIn}
@@ -471,13 +436,133 @@ function CheckInScreen({
         <button
           onClick={onViewHistory}
           className="w-full py-3.5 rounded-2xl text-sm font-medium transition-all active:scale-95"
-          style={{
-            background: "var(--surface)",
-            border: "1px solid var(--border)",
-            color: "var(--muted)",
-          }}
+          style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)" }}
         >
           查看历史记录
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Manual Report Form ───────────────────────────────────────────────────────
+const TASK_PRESETS = ["穿线管", "接线盒", "配电箱", "布线", "接线", "桥架", "开关插座", "灯具安装"];
+
+function ManualReportForm({
+  worker,
+  checkInTime,
+  onSubmit,
+  onViewHistory,
+}: {
+  worker: Worker;
+  checkInTime: string;
+  onSubmit: (report: Report) => void;
+  onViewHistory: () => void;
+}) {
+  const [task, setTask] = useState("");
+  const [spec, setSpec] = useState("");
+  const [qty, setQty] = useState("");
+
+  const canSubmit = task.trim() && qty.trim();
+
+  return (
+    <div className="min-h-[100dvh] grid-bg flex flex-col">
+      {/* Header */}
+      <div
+        className="flex items-center justify-between px-5 py-4 border-b shrink-0"
+        style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+      >
+        <div>
+          <div className="font-semibold text-white text-sm">{worker.name}</div>
+          <div className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>
+            {worker.project} · 打卡 {checkInTime}
+          </div>
+        </div>
+        <button
+          onClick={onViewHistory}
+          className="text-xs px-2.5 py-1.5 rounded-lg transition-all"
+          style={{ color: "var(--accent)", background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.2)" }}
+        >
+          记录
+        </button>
+      </div>
+
+      {/* Form body */}
+      <div className="flex-1 overflow-y-auto px-5 py-6">
+        <h2 className="text-xl font-bold text-white tracking-tight mb-1">填写今日报量</h2>
+        <p className="text-sm mb-6" style={{ color: "var(--muted)" }}>
+          填完点提交，管理员审核后生效
+        </p>
+
+        {/* 工序 */}
+        <div className="mb-5">
+          <div className="text-sm mb-2 flex items-center gap-1" style={{ color: "var(--muted)" }}>
+            工序 <span style={{ color: "#ef4444" }}>*</span>
+          </div>
+          <input
+            value={task}
+            onChange={(e) => setTask(e.target.value)}
+            placeholder="例：穿线管、接线盒安装"
+            className="w-full rounded-2xl px-4 py-3.5 text-base outline-none mb-3"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)" }}
+          />
+          {/* Preset chips */}
+          <div className="flex flex-wrap gap-2">
+            {TASK_PRESETS.map((t) => (
+              <button
+                key={t}
+                onClick={() => setTask(t)}
+                className="text-xs px-3 py-1.5 rounded-full transition-all active:scale-95"
+                style={{
+                  background: task === t ? "rgba(59,130,246,0.2)" : "var(--surface)",
+                  border: `1px solid ${task === t ? "rgba(59,130,246,0.4)" : "var(--border)"}`,
+                  color: task === t ? "var(--accent)" : "var(--muted)",
+                }}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 规格 */}
+        <div className="mb-5">
+          <div className="text-sm mb-2" style={{ color: "var(--muted)" }}>规格（选填）</div>
+          <input
+            value={spec}
+            onChange={(e) => setSpec(e.target.value)}
+            placeholder="例：DN20、BV4mm²、86型"
+            className="w-full rounded-2xl px-4 py-3.5 text-base outline-none"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)" }}
+          />
+        </div>
+
+        {/* 数量 */}
+        <div className="mb-8">
+          <div className="text-sm mb-2 flex items-center gap-1" style={{ color: "var(--muted)" }}>
+            数量 <span style={{ color: "#ef4444" }}>*</span>
+          </div>
+          <input
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+            placeholder="例：50m、30个、2套"
+            className="w-full rounded-2xl px-4 py-3.5 text-base outline-none"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)" }}
+          />
+        </div>
+
+        <button
+          onClick={() =>
+            onSubmit({ 工序: task.trim(), 规格: spec.trim() || "—", 数量: qty.trim() })
+          }
+          disabled={!canSubmit}
+          className="w-full py-5 rounded-2xl text-base font-semibold text-white transition-all active:scale-95 disabled:opacity-50"
+          style={{
+            background: "linear-gradient(135deg, #3b82f6, #2563eb)",
+            boxShadow: "0 0 32px rgba(59,130,246,0.3)",
+          }}
+        >
+          下一步，确认提交
         </button>
       </div>
     </div>
@@ -489,13 +574,13 @@ function DoneScreen({
   worker,
   checkInTime,
   report,
-  onReset,
+  onMore,
   onViewHistory,
 }: {
   worker: Worker;
   checkInTime: string;
   report: Report | null;
-  onReset: () => void;
+  onMore: () => void;
   onViewHistory: () => void;
 }) {
   return (
@@ -510,7 +595,9 @@ function DoneScreen({
       </div>
       <div className="text-center">
         <h2 className="text-xl font-bold text-white">报量已提交</h2>
-        <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>{worker.name} · 打卡时间 {checkInTime}</p>
+        <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>
+          {worker.name} · 打卡时间 {checkInTime}
+        </p>
       </div>
       {report && (
         <div className="glass rounded-2xl p-5 w-full max-w-sm">
@@ -527,15 +614,16 @@ function DoneScreen({
         </div>
       )}
       <div className="w-full max-w-sm space-y-2.5">
-        <button className="btn-ghost w-full py-3.5" onClick={onReset}>继续报量</button>
+        <button
+          onClick={onMore}
+          className="btn-primary w-full py-4 rounded-2xl text-base"
+        >
+          继续报量
+        </button>
         <button
           onClick={onViewHistory}
           className="w-full py-3.5 rounded-2xl text-sm font-medium transition-all active:scale-95"
-          style={{
-            background: "var(--surface)",
-            border: "1px solid var(--border)",
-            color: "var(--muted)",
-          }}
+          style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--muted)" }}
         >
           查看全部记录
         </button>
@@ -548,17 +636,11 @@ function DoneScreen({
 export default function WorkerPage() {
   const [phase, setPhase] = useState<Phase>("login");
   const [worker, setWorker] = useState<Worker | null>(null);
-  const [msgs, setMsgs] = useState<Msg[]>([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const [interimText, setInterimText] = useState("");
-  const [checkInTime, setCheckInTime] = useState("");
   const [report, setReport] = useState<Report | null>(null);
   const [photoPath, setPhotoPath] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [checkInTime, setCheckInTime] = useState("");
   const [showHistory, setShowHistory] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   // Restore identity from localStorage
   useEffect(() => {
@@ -567,18 +649,6 @@ export default function WorkerPage() {
       try { setWorker(JSON.parse(saved)); } catch { /* ignore */ }
     }
   }, []);
-
-  // Start conversation after check-in
-  useEffect(() => {
-    if (phase === "chat" && msgs.length === 0) {
-      setMsgs([{ role: "assistant", content: "今天做了啥？" }]);
-    }
-  }, [phase]);
-
-  // Auto-scroll
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [msgs, interimText, loading]);
 
   const handleLogin = (w: Worker) => {
     setWorker(w);
@@ -589,71 +659,12 @@ export default function WorkerPage() {
   const doCheckIn = () => {
     const now = new Date();
     setCheckInTime(`${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`);
-    setPhase("chat");
+    setPhase("form");
   };
 
-  const sendMessage = async (text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed || loading) return;
-    const newMsgs: Msg[] = [...msgs, { role: "user", content: trimmed }];
-    setMsgs(newMsgs);
-    setInput("");
-    setLoading(true);
-    try {
-      const res = await fetch("/api/worker/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newMsgs }),
-      });
-      const data = await res.json();
-      const aiContent: string = data.content ?? "好的，继续。";
-
-      if (aiContent.includes("[DONE]")) {
-        const jStart = aiContent.indexOf("{");
-        const jEnd = aiContent.lastIndexOf("}") + 1;
-        if (jStart !== -1 && jEnd > jStart) {
-          try { setReport(JSON.parse(aiContent.slice(jStart, jEnd)) as Report); } catch { /* ignore */ }
-        }
-        const displayText = aiContent.split("[DONE]")[0].trim() || "好，记上了。";
-        setMsgs([...newMsgs, { role: "assistant", content: displayText }]);
-        setTimeout(() => setPhase("confirm"), 600);
-      } else {
-        setMsgs([...newMsgs, { role: "assistant", content: aiContent }]);
-      }
-    } catch {
-      setMsgs([...newMsgs, { role: "assistant", content: "网络不好，再说一遍？" }]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const startVoice = () => {
-    const SR =
-      typeof window !== "undefined" &&
-      ((window as Window & { SpeechRecognition?: SpeechRecognitionStatic }).SpeechRecognition ||
-        (window as Window & { webkitSpeechRecognition?: SpeechRecognitionStatic }).webkitSpeechRecognition);
-    if (!SR) {
-      alert("当前浏览器不支持语音，请用下方文字输入（建议手机 Chrome）");
-      return;
-    }
-    const r = new SR();
-    r.lang = "zh-CN";
-    r.continuous = false;
-    r.interimResults = true;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    r.onresult = (e: any) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const interim = Array.from(e.results).map((res: any) => res[0].transcript).join("");
-      if (e.results[e.results.length - 1].isFinal) {
-        setInterimText(""); sendMessage(interim);
-      } else {
-        setInterimText(interim);
-      }
-    };
-    r.onerror = () => { setRecording(false); setInterimText(""); };
-    r.onend = () => { setRecording(false); setInterimText(""); };
-    r.start();
-    setRecording(true);
+  const handleFormSubmit = (r: Report) => {
+    setReport(r);
+    setPhase("confirm");
   };
 
   const handlePhotoUpload = async (file: File) => {
@@ -662,9 +673,16 @@ export default function WorkerPage() {
       const fd = new FormData();
       fd.append("file", file);
       const res = await fetch("/api/upload", { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error ?? "照片上传失败，请重试");
+        return;
+      }
       const data = await res.json();
       if (data.path) setPhotoPath(data.path);
-    } catch { /* non-blocking */ } finally {
+    } catch {
+      alert("照片上传失败，请检查网络连接");
+    } finally {
       setUploading(false);
     }
   };
@@ -672,7 +690,7 @@ export default function WorkerPage() {
   const submitReport = async () => {
     if (!report || !worker) return;
     try {
-      await fetch("/api/reports", {
+      const res = await fetch("/api/reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -685,132 +703,91 @@ export default function WorkerPage() {
           photoPath,
         }),
       });
-    } catch { /* non-blocking */ }
-    setPhase("done");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error ?? "报量提交失败，请重试");
+        return;
+      }
+      setPhase("done");
+    } catch {
+      alert("报量提交失败，请检查网络连接后重试");
+    }
   };
 
-  const resetAll = () => {
-    setPhase("checkin");
-    setMsgs([]);
-    setInput("");
+  const resetToForm = () => {
     setReport(null);
-    setInterimText("");
     setPhotoPath(null);
+    setPhase("form");
   };
 
-  // Show history overlay over any phase (except login)
+  // History overlay
   if (showHistory && worker) {
     return <HistoryView worker={worker} onClose={() => setShowHistory(false)} />;
   }
 
   if (phase === "login") return <LoginScreen onLogin={handleLogin} />;
   if (!worker) return null;
-  if (phase === "checkin") return (
-    <CheckInScreen worker={worker} onCheckIn={doCheckIn} onViewHistory={() => setShowHistory(true)} />
-  );
-  if (phase === "done") return (
-    <DoneScreen
-      worker={worker}
-      checkInTime={checkInTime}
-      report={report}
-      onReset={resetAll}
-      onViewHistory={() => setShowHistory(true)}
-    />
-  );
 
+  if (phase === "checkin") {
+    return (
+      <CheckInScreen
+        worker={worker}
+        onCheckIn={doCheckIn}
+        onViewHistory={() => setShowHistory(true)}
+      />
+    );
+  }
+
+  if (phase === "form") {
+    return (
+      <ManualReportForm
+        worker={worker}
+        checkInTime={checkInTime}
+        onSubmit={handleFormSubmit}
+        onViewHistory={() => setShowHistory(true)}
+      />
+    );
+  }
+
+  if (phase === "done") {
+    return (
+      <DoneScreen
+        worker={worker}
+        checkInTime={checkInTime}
+        report={report}
+        onMore={resetToForm}
+        onViewHistory={() => setShowHistory(true)}
+      />
+    );
+  }
+
+  // ─── Confirm phase ────────────────────────────────────────────────────────
   return (
     <div className="min-h-[100dvh] flex flex-col" style={{ background: "var(--bg)" }}>
       {/* Header */}
       <div
-        className="flex items-center justify-between px-5 py-3.5 border-b shrink-0"
+        className="flex items-center justify-between px-5 py-4 border-b shrink-0"
         style={{ borderColor: "var(--border)", background: "var(--surface)" }}
       >
-        <div>
-          <div className="font-semibold text-white text-sm">{worker.name}</div>
-          <div className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>
-            {worker.project} · 打卡 {checkInTime}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowHistory(true)}
-            className="text-xs px-2.5 py-1.5 rounded-lg transition-all"
-            style={{ color: "var(--accent)", background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.2)" }}
-          >
-            记录
-          </button>
-          <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--amber)" }}>
-            <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--amber)" }} />
-            模拟围栏
-          </div>
-          <button
-            onClick={() => { localStorage.removeItem("pl_worker"); setPhase("login"); setWorker(null); }}
-            className="text-xs px-2 py-1 rounded-lg"
-            style={{ color: "var(--muted)", background: "var(--bg)" }}
-          >
-            切换
-          </button>
-        </div>
+        <button
+          onClick={() => setPhase("form")}
+          className="flex items-center gap-2 text-sm"
+          style={{ color: "var(--muted)" }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 12H5M12 5l-7 7 7 7" />
+          </svg>
+          返回修改
+        </button>
+        <div className="text-sm font-semibold text-white">确认报量</div>
+        <div className="w-16" />
       </div>
 
-      {/* Chat messages */}
-      {phase === "chat" && (
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-          {msgs.map((m, i) => (
-            <div key={i} className={`flex items-end gap-2 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-              {m.role === "assistant" && (
-                <div
-                  className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mb-0.5"
-                  style={{ background: "rgba(59,130,246,0.2)" }}
-                >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2">
-                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-                  </svg>
-                </div>
-              )}
-              <div
-                className="max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed"
-                style={
-                  m.role === "user"
-                    ? { background: "var(--accent)", color: "white", borderBottomRightRadius: "4px" }
-                    : { background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)", borderBottomLeftRadius: "4px" }
-                }
-              >
-                {m.content}
-              </div>
-            </div>
-          ))}
+      <div className="flex-1 overflow-y-auto px-5 py-6 flex flex-col">
+        <p className="text-xs mb-4" style={{ color: "var(--muted)" }}>请核对信息后提交</p>
 
-          {loading && (
-            <div className="flex items-end gap-2 justify-start">
-              <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style={{ background: "rgba(59,130,246,0.2)" }}>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2">
-                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-                </svg>
-              </div>
-              <div className="px-4 py-3 rounded-2xl text-sm" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderBottomLeftRadius: "4px" }}>
-                <span className="animate-pulse" style={{ color: "var(--muted)", letterSpacing: "4px" }}>···</span>
-              </div>
-            </div>
-          )}
-
-          {interimText && (
-            <div className="flex justify-end">
-              <div className="max-w-[75%] rounded-2xl px-4 py-2.5 text-sm opacity-60" style={{ background: "var(--accent)", color: "white", borderBottomRightRadius: "4px" }}>
-                {interimText}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Confirm phase */}
-      {phase === "confirm" && report && (
-        <div className="flex-1 overflow-y-auto px-5 py-6 flex flex-col">
-          <div className="mb-4">
-            <h3 className="font-semibold text-white text-base">确认本次报量</h3>
-            <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>请核对信息后提交</p>
-          </div>
+        {/* Report summary */}
+        {report && (
           <div className="glass rounded-2xl p-5 mb-4">
             {(Object.entries(report) as [string, string][]).map(([k, v]) => (
               <div
@@ -823,102 +800,55 @@ export default function WorkerPage() {
               </div>
             ))}
           </div>
+        )}
 
-          {/* Photo upload */}
-          <label
-            className="flex items-center justify-center gap-2 py-4 rounded-xl mb-5 cursor-pointer text-sm transition-all"
-            style={{
-              border: photoPath ? "1px solid rgba(16,185,129,0.35)" : "1px dashed rgba(59,130,246,0.25)",
-              color: photoPath ? "var(--green)" : "var(--muted)",
-              background: photoPath ? "rgba(16,185,129,0.06)" : "transparent",
-            }}
-          >
-            {uploading ? (
-              <span className="animate-pulse">上传中...</span>
-            ) : photoPath ? (
-              <>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12" /></svg>
-                照片已上传
-              </>
-            ) : (
-              <>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                  <circle cx="12" cy="13" r="4" />
-                </svg>
-                拍照存证（选填）
-              </>
-            )}
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(f); }}
-            />
-          </label>
-
-          <button className="btn-primary w-full py-4 text-base rounded-xl mb-2" onClick={submitReport}>
-            确认提交
-          </button>
-          <button
-            className="btn-ghost w-full py-3"
-            onClick={() => { setPhase("chat"); setReport(null); setPhotoPath(null); }}
-          >
-            重新填写
-          </button>
-        </div>
-      )}
-
-      {/* Input area — only in chat */}
-      {phase === "chat" && (
-        <div
-          className="px-4 py-3 border-t shrink-0"
-          style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+        {/* Photo upload */}
+        <label
+          className="flex items-center justify-center gap-2 py-4 rounded-xl mb-5 cursor-pointer text-sm transition-all"
+          style={{
+            border: photoPath ? "1px solid rgba(16,185,129,0.35)" : "1px dashed rgba(59,130,246,0.25)",
+            color: photoPath ? "var(--green)" : "var(--muted)",
+            background: photoPath ? "rgba(16,185,129,0.06)" : "transparent",
+          }}
         >
-          <button
-            onClick={startVoice}
-            disabled={recording || loading}
-            className="w-full py-4 rounded-xl mb-2.5 flex items-center justify-center gap-2 text-sm font-medium transition-all active:scale-98 disabled:opacity-60"
-            style={{
-              background: recording ? "rgba(239,68,68,0.12)" : "rgba(59,130,246,0.1)",
-              border: `1px solid ${recording ? "rgba(239,68,68,0.35)" : "rgba(59,130,246,0.25)"}`,
-              color: recording ? "#ef4444" : "var(--accent)",
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-              <line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
-            </svg>
-            {recording ? "聆听中... 请说话" : "点击语音输入"}
-          </button>
+          {uploading ? (
+            <span className="animate-pulse">上传中...</span>
+          ) : photoPath ? (
+            <>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12" /></svg>
+              照片已上传
+            </>
+          ) : (
+            <>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                <circle cx="12" cy="13" r="4" />
+              </svg>
+              拍照存证（选填）
+            </>
+          )}
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(f); }}
+          />
+        </label>
 
-          <div className="flex gap-2">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage(input)}
-              placeholder="或直接文字输入..."
-              className="flex-1 rounded-xl px-4 py-2.5 text-sm outline-none"
-              style={{ background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)" }}
-            />
-            <button
-              className="btn-primary px-4 py-2.5 rounded-xl text-sm"
-              onClick={() => sendMessage(input)}
-              disabled={!input.trim() || loading}
-            >
-              发
-            </button>
-          </div>
-        </div>
-      )}
+        <button
+          className="btn-primary w-full py-4 text-base rounded-xl mb-2"
+          onClick={submitReport}
+        >
+          确认提交
+        </button>
+        <button
+          className="btn-ghost w-full py-3"
+          onClick={resetToForm}
+        >
+          重新填写
+        </button>
+      </div>
     </div>
   );
-}
-
-// TypeScript stub for browser SpeechRecognition
-interface SpeechRecognitionStatic {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  new (): any;
 }

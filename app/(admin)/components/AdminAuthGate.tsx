@@ -14,6 +14,12 @@ export default function AdminAuthGate({ children }: { children: React.ReactNode 
 
   const trySubmit = useCallback((d: string[]) => {
     if (d.join("") === ADMIN_PIN) {
+      // Set server-side HTTP-only cookie for API auth (RC1)
+      fetch("/api/auth/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: d.join("") }),
+      }).catch(() => {/* cookie is best-effort; page already guards UI */});
       sessionStorage.setItem("admin_auth", "ok");
       setAuthed(true);
     } else {
