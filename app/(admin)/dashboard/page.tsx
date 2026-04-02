@@ -33,6 +33,16 @@ interface Correction {
   status: string;
 }
 
+interface Project {
+  id: number;
+  name: string;
+  code: string;
+  budget: number;
+  spent: number;
+  profitRate: number;
+  status: string;
+}
+
 function fmtTime(iso: string) {
   const d = new Date(iso);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -56,31 +66,29 @@ const TODAY = new Date();
 const DAYS = ["日", "一", "二", "三", "四", "五", "六"];
 const TODAY_STR = `${TODAY.getFullYear()}年${TODAY.getMonth() + 1}月${TODAY.getDate()}日 星期${DAYS[TODAY.getDay()]}`;
 
-const PROJECT_META = [
-  { id: "HLD-001", name: "汇龙配电所改造", budget: 280000, spent: 134000, profitRate: 19.2 },
-  { id: "XMP-002", name: "下马坪10kV主线", budget: 196000, spent: 89000, profitRate: 17.1 },
-];
-
 export default function DashboardPage() {
   const [checkins, setCheckins] = useState<CheckIn[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [visas, setVisas] = useState<Visa[]>([]);
   const [corrections, setCorrections] = useState<Correction[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
   const fetchAll = useCallback(async () => {
     try {
-      const [ci, rp, vs, co] = await Promise.all([
+      const [ci, rp, vs, co, pr] = await Promise.all([
         fetch("/api/checkin").then((r) => r.json()),
         fetch("/api/reports").then((r) => r.json()),
         fetch("/api/visas").then((r) => r.json()),
         fetch("/api/corrections").then((r) => r.json()),
+        fetch("/api/projects").then((r) => r.json()),
       ]);
       setCheckins(Array.isArray(ci) ? ci : []);
       setReports(Array.isArray(rp) ? rp : []);
       setVisas(Array.isArray(vs) ? vs : []);
       setCorrections(Array.isArray(co) ? co : []);
+      setProjects(Array.isArray(pr) ? pr : []);
       setUpdatedAt(new Date());
     } catch (e) {
       console.error(e);
@@ -101,6 +109,11 @@ export default function DashboardPage() {
   const pendingVisas = visas.filter((v) => v.status === "pending");
   const pendingVisaTotal = pendingVisas.reduce((s, v) => s + v.amount, 0);
   const pendingCorrections = corrections.filter((c) => c.status === "pending");
+  const activeProjects = projects.filter((p) => p.status === "active");
+  const avgProfitRate =
+    projects.length > 0
+      ? projects.reduce((s, p) => s + p.profitRate, 0) / projects.length
+      : 0;
 
   const recentLogs = [...todayReports]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -219,15 +232,19 @@ export default function DashboardPage() {
             />
           </div>
 
-          {/* 综合利润率 — semi-static, no financial model yet */}
+          {/* 综合利润率 — from project data */}
           <div className="glass-sm rounded-xl p-5">
             <div className="text-xs mb-3" style={{ color: "var(--muted)" }}>综合利润率</div>
             <div className="flex items-baseline gap-1.5">
-              <span className="text-2xl font-mono font-bold text-white">18.4</span>
-              <span className="text-sm" style={{ color: "var(--muted)" }}>%</span>
+              <span className="text-2xl font-mono font-bold text-white">
+                {loading || projects.length === 0 ? "—" : avgProfitRate.toFixed(1)}
+              </span>
+              {!loading && projects.length > 0 && (
+                <span className="text-sm" style={{ color: "var(--muted)" }}>%</span>
+              )}
             </div>
             <div className="mt-2 text-xs font-mono" style={{ color: "var(--green)" }}>
-              ↑ +2.1pt
+              {loading ? "" : `${activeProjects.length} 个在施项目`}
             </div>
             <div
               className="mt-3 h-0.5 rounded-full"
@@ -267,11 +284,16 @@ export default function DashboardPage() {
           <div className="col-span-2 glass rounded-xl p-6">
             <div className="flex items-center justify-between mb-5">
               <h2 className="font-medium text-white text-sm">在施项目</h2>
-              <button className="btn-ghost">管理项目</button>
+              <a href="/projects" className="btn-ghost text-xs">管理项目</a>
             </div>
             <div className="space-y-4">
-              {PROJECT_META.map((p) => {
-                const pct = Math.round((p.spent / p.budget) * 100);
+              {!loading && activeProjects.length === 0 && (
+                <div className="text-sm text-center py-6" style={{ color: "var(--muted)" }}>
+                  暂无在施项目，前往项目管理添加
+                </div>
+              )}
+              {activeProjects.map((p) => {
+                const pct = p.budget > 0 ? Math.min(Math.round((p.spent / p.budget) * 100), 100) : 0;
                 const uniqueWorkers = new Set(
                   checkins.filter((ci) => ci.project === p.name).map((ci) => ci.workerId)
                 );
@@ -299,7 +321,7 @@ export default function DashboardPage() {
                           className="text-[11px] mt-0.5 font-mono"
                           style={{ color: "var(--muted)" }}
                         >
-                          {p.id} · {loading ? "—" : projectWorkerCount}人在场 · 今日{loading ? "—" : projectReportCount}条报量
+                          {p.code} · {loading ? "—" : projectWorkerCount}人在场 · 今日{loading ? "—" : projectReportCount}条报量
                         </div>
                       </div>
                       <div className="text-right">
@@ -310,7 +332,7 @@ export default function DashboardPage() {
                           className="text-sm font-mono font-semibold"
                           style={{ color: "var(--green)" }}
                         >
-                          {p.profitRate}%
+                          {p.profitRate > 0 ? `${p.profitRate}%` : "—"}
                         </div>
                       </div>
                     </div>
@@ -323,13 +345,15 @@ export default function DashboardPage() {
                           className="h-full rounded-full"
                           style={{
                             width: `${pct}%`,
-                            background: "linear-gradient(90deg, var(--accent), #60a5fa)",
+                            background: pct >= 90
+                              ? "linear-gradient(90deg, #ef4444, #f87171)"
+                              : "linear-gradient(90deg, var(--accent), #60a5fa)",
                           }}
                         />
                       </div>
                       <span
                         className="text-xs font-mono w-8 text-right"
-                        style={{ color: "var(--muted)" }}
+                        style={{ color: pct >= 90 ? "#ef4444" : "var(--muted)" }}
                       >
                         {pct}%
                       </span>
@@ -342,7 +366,7 @@ export default function DashboardPage() {
                         已用 ¥{(p.spent / 10000).toFixed(1)}万 / 预算 ¥
                         {(p.budget / 10000).toFixed(0)}万
                       </span>
-                      <span style={{ color: "var(--accent)" }}>进度 {pct}%</span>
+                      <span style={{ color: pct >= 90 ? "#ef4444" : "var(--accent)" }}>进度 {pct}%</span>
                     </div>
                   </div>
                 );

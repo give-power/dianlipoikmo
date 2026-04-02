@@ -1,6 +1,16 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const worker = await prisma.worker.findUnique({ where: { id } });
+  if (!worker) return Response.json({ error: "Worker not found" }, { status: 404 });
+  return Response.json(worker);
+}
+
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

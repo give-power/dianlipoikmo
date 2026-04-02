@@ -38,10 +38,12 @@ function CorrectionModal({
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
     if (!reason.trim()) return;
     setSubmitting(true);
+    setError(null);
     try {
       const res = await fetch("/api/corrections", {
         method: "POST",
@@ -57,12 +59,12 @@ function CorrectionModal({
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(err.error ?? "纠偏提交失败，请重试");
+        setError(err.error ?? "纠偏提交失败，请重试");
         return;
       }
       setDone(true);
     } catch {
-      alert("纠偏提交失败，请检查网络连接后重试");
+      setError("纠偏提交失败，请检查网络连接后重试");
     } finally {
       setSubmitting(false);
     }
@@ -127,6 +129,11 @@ function CorrectionModal({
               />
             </div>
 
+            {error && (
+              <div className="mb-3 px-3 py-2.5 rounded-xl text-xs" style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171" }}>
+                {error}
+              </div>
+            )}
             <button
               onClick={handleSubmit}
               disabled={!reason.trim() || submitting}
@@ -327,6 +334,7 @@ function CheckInScreen({
 }) {
   const [checking, setChecking] = useState(false);
   const [todayStatus, setTodayStatus] = useState<TodayStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const todayStart = new Date();
@@ -359,6 +367,7 @@ function CheckInScreen({
 
   const handleCheckIn = async () => {
     setChecking(true);
+    setError(null);
     try {
       const res = await fetch("/api/checkin", {
         method: "POST",
@@ -367,12 +376,12 @@ function CheckInScreen({
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(err.error ?? "打卡失败，请重试");
+        setError(err.error ?? "打卡失败，请重试");
         return;
       }
       onCheckIn();
     } catch {
-      alert("打卡失败，请检查网络连接后重试");
+      setError("打卡失败，请检查网络连接后重试");
     } finally {
       setChecking(false);
     }
@@ -422,6 +431,11 @@ function CheckInScreen({
       )}
 
       <div className="w-full max-w-xs space-y-3">
+        {error && (
+          <div className="px-3 py-2.5 rounded-xl text-xs text-center" style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171" }}>
+            {error}
+          </div>
+        )}
         <button
           onClick={handleCheckIn}
           disabled={checking}
@@ -641,13 +655,21 @@ export default function WorkerPage() {
   const [uploading, setUploading] = useState(false);
   const [checkInTime, setCheckInTime] = useState("");
   const [showHistory, setShowHistory] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Restore identity from localStorage
+  // Restore identity from localStorage + verify worker still exists in DB (RH1)
   useEffect(() => {
     const saved = localStorage.getItem("pl_worker");
-    if (saved) {
-      try { setWorker(JSON.parse(saved)); } catch { /* ignore */ }
-    }
+    if (!saved) return;
+    try {
+      const w: Worker = JSON.parse(saved);
+      fetch(`/api/workers/${encodeURIComponent(w.id)}`)
+        .then((r) => {
+          if (r.ok) return r.json().then((fresh: Worker) => { setWorker(fresh); });
+          else localStorage.removeItem("pl_worker"); // worker deleted — force re-login
+        })
+        .catch(() => setWorker(w)); // network error — allow cached identity
+    } catch { /* ignore */ }
   }, []);
 
   const handleLogin = (w: Worker) => {
@@ -669,19 +691,20 @@ export default function WorkerPage() {
 
   const handlePhotoUpload = async (file: File) => {
     setUploading(true);
+    setSubmitError(null);
     try {
       const fd = new FormData();
       fd.append("file", file);
       const res = await fetch("/api/upload", { method: "POST", body: fd });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(err.error ?? "照片上传失败，请重试");
+        setSubmitError(err.error ?? "照片上传失败，请重试");
         return;
       }
       const data = await res.json();
       if (data.path) setPhotoPath(data.path);
     } catch {
-      alert("照片上传失败，请检查网络连接");
+      setSubmitError("照片上传失败，请检查网络连接");
     } finally {
       setUploading(false);
     }
@@ -689,6 +712,7 @@ export default function WorkerPage() {
 
   const submitReport = async () => {
     if (!report || !worker) return;
+    setSubmitError(null);
     try {
       const res = await fetch("/api/reports", {
         method: "POST",
@@ -705,12 +729,12 @@ export default function WorkerPage() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(err.error ?? "报量提交失败，请重试");
+        setSubmitError(err.error ?? "报量提交失败，请重试");
         return;
       }
       setPhase("done");
     } catch {
-      alert("报量提交失败，请检查网络连接后重试");
+      setSubmitError("报量提交失败，请检查网络连接后重试");
     }
   };
 
@@ -836,6 +860,11 @@ export default function WorkerPage() {
           />
         </label>
 
+        {submitError && (
+          <div className="mb-3 px-3 py-2.5 rounded-xl text-xs" style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171" }}>
+            {submitError}
+          </div>
+        )}
         <button
           className="btn-primary w-full py-4 text-base rounded-xl mb-2"
           onClick={submitReport}

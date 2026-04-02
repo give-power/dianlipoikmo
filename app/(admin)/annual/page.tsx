@@ -47,13 +47,13 @@ export default function AnnualPage() {
 
   // Aggregate worker-days per month
   const monthWorkerDays = MONTH_LABELS.map((_, i) =>
-    checkins.filter((ci) => new Date(ci.createdAt).getUTCMonth() === i).length
+    checkins.filter((ci) => new Date(ci.createdAt).getMonth() === i).length
   );
 
   // Aggregate approved reports per month
   const monthApproved = MONTH_LABELS.map((_, i) =>
     reports.filter(
-      (r) => r.status === "approved" && new Date(r.createdAt).getUTCMonth() === i
+      (r) => r.status === "approved" && new Date(r.createdAt).getMonth() === i
     ).length
   );
 
