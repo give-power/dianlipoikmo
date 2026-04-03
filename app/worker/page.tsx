@@ -369,10 +369,21 @@ function CheckInScreen({
     setChecking(true);
     setError(null);
     try {
+      // 尝试获取 GPS（不阻塞，超时 5s 降级为手动打卡）
+      let gpsLat: number | null = null;
+      let gpsLng: number | null = null;
+      try {
+        const pos = await new Promise<GeolocationPosition>((res, rej) => {
+          navigator.geolocation.getCurrentPosition(res, rej, { timeout: 5000, maximumAge: 30000 });
+        });
+        gpsLat = pos.coords.latitude;
+        gpsLng = pos.coords.longitude;
+      } catch { /* GPS 不可用，继续手动打卡 */ }
+
       const res = await fetch("/api/checkin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workerId: worker.id, project: worker.project }),
+        body: JSON.stringify({ workerId: worker.id, project: worker.project, gpsLat, gpsLng }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -651,7 +662,7 @@ export default function WorkerPage() {
   const [phase, setPhase] = useState<Phase>("login");
   const [worker, setWorker] = useState<Worker | null>(null);
   const [report, setReport] = useState<Report | null>(null);
-  const [photoPath, setPhotoPath] = useState<string | null>(null);
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [checkInTime, setCheckInTime] = useState("");
   const [showHistory, setShowHistory] = useState(false);
@@ -689,20 +700,24 @@ export default function WorkerPage() {
     setPhase("confirm");
   };
 
-  const handlePhotoUpload = async (file: File) => {
+  const handlePhotoUpload = async (files: FileList) => {
     setUploading(true);
     setSubmitError(null);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch("/api/upload", { method: "POST", body: fd });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setSubmitError(err.error ?? "照片上传失败，请重试");
-        return;
+      const uploaded: string[] = [];
+      for (const file of Array.from(files)) {
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await fetch("/api/upload", { method: "POST", body: fd });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          setSubmitError(err.error ?? "照片上传失败，请重试");
+          return;
+        }
+        const data = await res.json();
+        if (data.path) uploaded.push(data.path);
       }
-      const data = await res.json();
-      if (data.path) setPhotoPath(data.path);
+      setPhotoUrls((prev) => [...prev, ...uploaded]);
     } catch {
       setSubmitError("照片上传失败，请检查网络连接");
     } finally {
@@ -724,7 +739,7 @@ export default function WorkerPage() {
           task: report.工序,
           spec: report.规格,
           qty: report.数量,
-          photoPath,
+          photoUrls,
         }),
       });
       if (!res.ok) {
@@ -740,7 +755,7 @@ export default function WorkerPage() {
 
   const resetToForm = () => {
     setReport(null);
-    setPhotoPath(null);
+    setPhotoUrls([]);
     setPhase("form");
   };
 
@@ -827,38 +842,52 @@ export default function WorkerPage() {
         )}
 
         {/* Photo upload */}
-        <label
-          className="flex items-center justify-center gap-2 py-4 rounded-xl mb-5 cursor-pointer text-sm transition-all"
-          style={{
-            border: photoPath ? "1px solid rgba(16,185,129,0.35)" : "1px dashed rgba(59,130,246,0.25)",
-            color: photoPath ? "var(--green)" : "var(--muted)",
-            background: photoPath ? "rgba(16,185,129,0.06)" : "transparent",
-          }}
-        >
-          {uploading ? (
-            <span className="animate-pulse">上传中...</span>
-          ) : photoPath ? (
-            <>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12" /></svg>
-              照片已上传
-            </>
-          ) : (
-            <>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                <circle cx="12" cy="13" r="4" />
-              </svg>
-              拍照存证（选填）
-            </>
+        <div className="mb-5 space-y-2">
+          <label
+            className="flex items-center justify-center gap-2 py-4 rounded-xl cursor-pointer text-sm transition-all"
+            style={{
+              border: photoUrls.length > 0 ? "1px solid rgba(16,185,129,0.35)" : "1px dashed rgba(59,130,246,0.25)",
+              color: photoUrls.length > 0 ? "var(--green)" : "var(--muted)",
+              background: photoUrls.length > 0 ? "rgba(16,185,129,0.06)" : "transparent",
+            }}
+          >
+            {uploading ? (
+              <span className="animate-pulse">上传中...</span>
+            ) : photoUrls.length > 0 ? (
+              <>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12" /></svg>
+                已上传 {photoUrls.length} 张
+                <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full font-mono" style={{ background: "rgba(16,185,129,0.15)", color: "var(--green)" }}>
+                  +继续添加
+                </span>
+              </>
+            ) : (
+              <>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                  <circle cx="12" cy="13" r="4" />
+                </svg>
+                拍照存证（选填，可多张）
+              </>
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => { if (e.target.files?.length) handlePhotoUpload(e.target.files); }}
+            />
+          </label>
+          {photoUrls.length > 0 && (
+            <button
+              onClick={() => setPhotoUrls([])}
+              className="text-xs w-full text-center py-1"
+              style={{ color: "var(--muted)" }}
+            >
+              清除全部照片
+            </button>
           )}
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(f); }}
-          />
-        </label>
+        </div>
 
         {submitError && (
           <div className="mb-3 px-3 py-2.5 rounded-xl text-xs" style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171" }}>

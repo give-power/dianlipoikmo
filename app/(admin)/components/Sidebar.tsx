@@ -17,6 +17,12 @@ const NAV_ITEMS = [
     path: "M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z",
   },
   {
+    href: "/reports",
+    label: "报量审核",
+    badgeKey: "reports" as const,
+    path: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4",
+  },
+  {
     href: "/corrections",
     label: "纠偏中心",
     badgeKey: "corrections" as const,
@@ -27,6 +33,12 @@ const NAV_ITEMS = [
     label: "财务核算",
     badgeKey: null,
     path: "M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z",
+  },
+  {
+    href: "/materials",
+    label: "材料管控",
+    badgeKey: null,
+    path: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4",
   },
   {
     href: "/visas",
@@ -46,21 +58,37 @@ const NAV_ITEMS = [
     badgeKey: null,
     path: "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
   },
+  {
+    href: "/equipment",
+    label: "工器具",
+    badgeKey: "equipment" as const,
+    path: "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z",
+  },
+  {
+    href: "/audit",
+    label: "审计追踪",
+    badgeKey: null,
+    path: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
+  },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const [badges, setBadges] = useState<{ corrections: number; visas: number }>({
+  const [badges, setBadges] = useState<{ corrections: number; visas: number; reports: number; equipment: number }>({
     corrections: 0,
     visas: 0,
+    reports: 0,
+    equipment: 0,
   });
 
   useEffect(() => {
     const fetchBadges = async () => {
       try {
-        const [c, v] = await Promise.all([
+        const [c, v, rp, eq] = await Promise.all([
           fetch("/api/corrections").then((r) => r.json()),
           fetch("/api/visas").then((r) => r.json()),
+          fetch("/api/reports?status=pending&limit=100").then((r) => r.json()),
+          fetch("/api/equipment?alert=1").then((r) => r.json()),
         ]);
         setBadges({
           corrections: Array.isArray(c)
@@ -69,6 +97,8 @@ export default function Sidebar() {
           visas: Array.isArray(v)
             ? v.filter((x: { status: string }) => x.status === "pending").length
             : 0,
+          reports: Array.isArray(rp) ? rp.length : 0,
+          equipment: Array.isArray(eq) ? eq.length : 0,
         });
       } catch {
         // silent fail — badges just won't show

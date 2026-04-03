@@ -13,12 +13,21 @@ interface Project {
 
 export default function FinancePage() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [reportRevenue, setReportRevenue] = useState<number>(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/projects")
-      .then((r) => r.json())
-      .then((data) => setProjects(Array.isArray(data) ? data : []))
+    Promise.all([
+      fetch("/api/projects").then((r) => r.json()),
+      fetch("/api/reports?status=verified&limit=1000").then((r) => r.json()),
+    ])
+      .then(([pData, rData]) => {
+        setProjects(Array.isArray(pData) ? pData : []);
+        if (Array.isArray(rData)) {
+          const total = rData.reduce((s: number, r: { totalValue: number | null }) => s + (r.totalValue ?? 0), 0);
+          setReportRevenue(total);
+        }
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
@@ -67,6 +76,11 @@ export default function FinancePage() {
       label: "项目总数",
       value: `${projects.length} 个`,
       color: "var(--text)",
+    },
+    {
+      label: "报量实收产值",
+      value: reportRevenue > 0 ? `¥${(reportRevenue / 10000).toFixed(1)}万` : "—",
+      color: "var(--accent)",
     },
   ];
 
@@ -136,19 +150,31 @@ export default function FinancePage() {
               利润计算说明
             </h2>
             <div
-              className="font-mono text-sm p-4 rounded-lg"
+              className="font-mono text-sm p-4 rounded-lg space-y-1"
               style={{ background: "var(--surface2)", color: "var(--text)" }}
             >
-              预估利润 = Σ（各项目已用产值 × 利润率）
+              <div>预估利润 = 报量实收产值 - 基地费用 - 材料成本</div>
+              <div style={{ color: "var(--muted)", fontSize: "11px" }}>
+                备用公式：Σ（各项目已用产值 × 利润率）
+              </div>
             </div>
-            {impliedProfit > 0 && (
-              <div
-                className="mt-3 font-mono text-sm"
-                style={{ color: "var(--green)" }}
-              >
-                ¥{(impliedProfit / 10000).toFixed(1)}万 ≈ ¥
-                {(totalSpent / 10000).toFixed(1)}万 × {avgProfitRate.toFixed(1)}
-                %（加权均值）
+            {reportRevenue > 0 && (
+              <div className="mt-3 text-xs space-y-1" style={{ color: "var(--muted)" }}>
+                <div>
+                  报量实收产值：
+                  <span className="font-mono ml-1" style={{ color: "var(--accent)" }}>
+                    ¥{(reportRevenue / 10000).toFixed(2)}万
+                  </span>
+                </div>
+                {impliedProfit > 0 && (
+                  <div>
+                    含利润（预估）：
+                    <span className="font-mono ml-1" style={{ color: "var(--green)" }}>
+                      ¥{(impliedProfit / 10000).toFixed(1)}万
+                    </span>
+                    <span className="ml-1">（{avgProfitRate.toFixed(1)}% 均值利润率）</span>
+                  </div>
+                )}
               </div>
             )}
           </div>

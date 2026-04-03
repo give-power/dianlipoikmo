@@ -7,11 +7,13 @@ interface Msg {
 }
 
 const SUGGESTIONS = [
-  "今日有哪些工人打卡了？",
-  "汇总所有待确认签证的总金额",
-  "今日报量情况如何？",
-  "当前有哪些纠偏申请待处理？",
-  "对比两个项目的利润率",
+  "今日打卡情况",
+  "待确认签证汇总",
+  "今日报量",
+  "待处理纠偏申请",
+  "所有项目利润率对比",
+  "批准 ID 为 1 的签证",
+  "驳回 ID 为 2 的纠偏",
 ];
 
 const WELCOME: Msg = {
@@ -177,7 +179,16 @@ export default function AgentPage() {
                     </span>
                   </div>
                 )}
-                <p className="leading-relaxed whitespace-pre-wrap">{m.text}</p>
+                <p className="leading-relaxed whitespace-pre-wrap text-sm"
+                  dangerouslySetInnerHTML={{
+                    __html: m.text
+                      .replace(/&/g, "&amp;")
+                      .replace(/</g, "&lt;")
+                      .replace(/>/g, "&gt;")
+                      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+                      .replace(/`(.+?)`/g, "<code class='px-1 rounded text-xs' style='background:rgba(255,255,255,0.08)'>$1</code>"),
+                  }}
+                />
               </div>
             </div>
           ))}

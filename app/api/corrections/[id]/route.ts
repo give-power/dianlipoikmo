@@ -1,22 +1,28 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { writeAudit } from "@/lib/audit";
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const { status } = await req.json();
+  const correctionId = Number(id);
+  const body = await req.json();
+  const { status, operatorId } = body;
 
   if (!["pending", "approved", "rejected"].includes(status)) {
     return Response.json({ error: "Invalid status" }, { status: 400 });
   }
 
+  const existing = await prisma.correction.findUnique({ where: { id: correctionId } });
+  if (!existing) return Response.json({ error: "纠偏记录不存在" }, { status: 404 });
+
   try {
     // RC6: wrap correction update + report update in a single transaction
     const result = await prisma.$transaction(async (tx) => {
       const correction = await tx.correction.update({
-        where: { id: Number(id) },
+        where: { id: correctionId },
         data: { status },
       });
 
@@ -43,6 +49,16 @@ export async function PATCH(
       }
 
       return correction;
+    });
+
+    await writeAudit({
+      tableName: "Correction",
+      recordId: correctionId,
+      field: "status",
+      oldValue: existing.status,
+      newValue: status,
+      operatorId: operatorId ?? "admin",
+      action: "update",
     });
 
     return Response.json(result);
