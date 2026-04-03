@@ -22,12 +22,17 @@ export async function GET(req: NextRequest) {
     };
   }
 
-  const reports = await prisma.report.findMany({
-    where: Object.keys(where).length > 0 ? where : undefined,
-    orderBy: { createdAt: "desc" },
-    take: limitParam ? Number(limitParam) : 100,
-  });
-  return Response.json(reports);
+  try {
+    const reports = await prisma.report.findMany({
+      where: Object.keys(where).length > 0 ? where : undefined,
+      orderBy: { createdAt: "desc" },
+      take: limitParam ? Number(limitParam) : 100,
+    });
+    return Response.json(reports);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "unknown error";
+    return Response.json({ error: msg }, { status: 500 });
+  }
 }
 
 export async function POST(req: NextRequest) {
