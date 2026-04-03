@@ -8,14 +8,22 @@ interface Worker {
   phone?: string | null;
 }
 
+interface Project {
+  id: number;
+  name: string;
+  code: string;
+}
+
 export default function WorkersPage() {
   const [workers, setWorkers] = useState<Worker[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
   const [project, setProject] = useState("");
   const [phone, setPhone] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
@@ -31,9 +39,23 @@ export default function WorkersPage() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  useEffect(() => {
+    fetch("/api/projects")
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d)) {
+          setProjects(d);
+          if (d.length > 0 && !project) setProject(d[0].name);
+        }
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleCreate = async () => {
     if (!name.trim() || !project.trim()) return;
     setSubmitting(true);
+    setCreateError(null);
     try {
       const res = await fetch("/api/workers", {
         method: "POST",
@@ -41,9 +63,14 @@ export default function WorkersPage() {
         body: JSON.stringify({ name: name.trim(), project: project.trim(), phone: phone.trim() || null }),
       });
       if (res.ok) {
-        setName(""); setProject(""); setPhone(""); setShowForm(false);
+        setName(""); setPhone(""); setShowForm(false); setCreateError(null);
         fetchAll();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setCreateError(err.error ?? `创建失败（HTTP ${res.status}）`);
       }
+    } catch {
+      setCreateError("网络错误，请检查连接后重试");
     } finally {
       setSubmitting(false);
     }
@@ -97,23 +124,60 @@ export default function WorkersPage() {
           >
             <div className="text-sm font-semibold text-white mb-4">新增工人</div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 mb-4">
-              {[
-                { label: "姓名 *", value: name, set: setName, placeholder: "例：张三" },
-                { label: "所属项目 *", value: project, set: setProject, placeholder: "例：汇龙配电所改造" },
-                { label: "手机号（选填）", value: phone, set: setPhone, placeholder: "13x..." },
-              ].map(({ label, value, set, placeholder }) => (
-                <div key={label}>
-                  <div className="text-xs mb-1.5" style={{ color: "var(--muted)" }}>{label}</div>
+              {/* 姓名 */}
+              <div>
+                <div className="text-xs mb-1.5" style={{ color: "var(--muted)" }}>姓名 *</div>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="例：张三"
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+                  style={{ background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)" }}
+                />
+              </div>
+              {/* 所属项目 — 下拉选择 */}
+              <div>
+                <div className="text-xs mb-1.5" style={{ color: "var(--muted)" }}>所属项目 *</div>
+                {projects.length > 0 ? (
+                  <select
+                    value={project}
+                    onChange={(e) => setProject(e.target.value)}
+                    className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+                    style={{ background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)" }}
+                  >
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.name} style={{ background: "#0d1929" }}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
                   <input
-                    value={value}
-                    onChange={(e) => set(e.target.value)}
-                    placeholder={placeholder}
+                    value={project}
+                    onChange={(e) => setProject(e.target.value)}
+                    placeholder="例：汇龙配电所改造"
                     className="w-full rounded-lg px-3 py-2 text-sm outline-none"
                     style={{ background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)" }}
                   />
-                </div>
-              ))}
+                )}
+              </div>
+              {/* 手机号 */}
+              <div>
+                <div className="text-xs mb-1.5" style={{ color: "var(--muted)" }}>手机号（选填）</div>
+                <input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="13x..."
+                  className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+                  style={{ background: "var(--bg)", border: "1px solid var(--border)", color: "var(--text)" }}
+                />
+              </div>
             </div>
+            {createError && (
+              <div className="mb-3 px-3 py-2 rounded-lg text-xs" style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171" }}>
+                {createError}
+              </div>
+            )}
             <div className="flex gap-2">
               <button
                 onClick={handleCreate}
@@ -123,7 +187,7 @@ export default function WorkersPage() {
                 {submitting ? "创建中..." : "确认创建"}
               </button>
               <button
-                onClick={() => { setShowForm(false); setName(""); setProject(""); setPhone(""); }}
+                onClick={() => { setShowForm(false); setName(""); setPhone(""); setCreateError(null); }}
                 className="btn-ghost text-sm"
               >
                 取消
