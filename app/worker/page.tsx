@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 
 type Report = { 工序: string; 规格: string; 数量: string };
 type Phase = "login" | "checkin" | "form" | "confirm" | "done";
-type Worker = { id: string; name: string; project: string };
+type Worker = { id: string; name: string; project: string; wageType?: string | null; wageRate?: number | null };
 
 type ReportRecord = {
   id: number;
@@ -448,6 +448,8 @@ type TodayStatus = {
   reportCount: number;
   pendingCount: number;
   approvedCount: number;
+  monthAttendance: number;
+  monthEarnings: number | null;
 };
 
 function CheckInScreen({
@@ -466,6 +468,9 @@ function CheckInScreen({
   useEffect(() => {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
     Promise.all([
       fetch("/api/checkin").then((r) => r.json()).catch(() => []),
       fetch(`/api/reports?workerId=${encodeURIComponent(worker.id)}`).then((r) => r.json()).catch(() => []),
@@ -476,10 +481,21 @@ function CheckInScreen({
               ci.workerId === worker.id && new Date(ci.createdAt) >= todayStart
           )
         : null;
+      const myMonthCheckins = Array.isArray(checkins)
+        ? checkins.filter(
+            (ci: { workerId: string; createdAt: string }) =>
+              ci.workerId === worker.id && new Date(ci.createdAt) >= monthStart
+          )
+        : [];
       const todayReports = Array.isArray(reports)
         ? reports.filter((r: { createdAt: string }) => new Date(r.createdAt) >= todayStart)
         : [];
       const d = myCheckin ? new Date(myCheckin.createdAt) : null;
+      const monthAttendance = myMonthCheckins.length;
+      const monthEarnings =
+        worker.wageType === "daily" && worker.wageRate
+          ? monthAttendance * worker.wageRate
+          : null;
       setTodayStatus({
         checkedIn: !!myCheckin,
         checkinTime: d
@@ -488,9 +504,11 @@ function CheckInScreen({
         reportCount: todayReports.length,
         pendingCount: todayReports.filter((r: { status: string }) => r.status === "pending").length,
         approvedCount: todayReports.filter((r: { status: string }) => r.status === "approved").length,
+        monthAttendance,
+        monthEarnings,
       });
     });
-  }, [worker.id]);
+  }, [worker.id, worker.wageType, worker.wageRate]);
 
   const handleCheckIn = async () => {
     setChecking(true);
@@ -565,6 +583,25 @@ function CheckInScreen({
           ) : (
             <div className="text-xs" style={{ color: "var(--muted)" }}>今日暂无报量记录</div>
           )}
+          {/* 月度出勤 & 收益 */}
+          <div className="mt-2 pt-2 flex items-center justify-between" style={{ borderTop: "1px solid rgba(59,130,246,0.1)" }}>
+            <div className="text-xs" style={{ color: "var(--muted)" }}>
+              本月出勤
+              <span className="ml-1 font-mono font-semibold" style={{ color: "var(--text)" }}>
+                {todayStatus.monthAttendance} 天
+              </span>
+            </div>
+            {todayStatus.monthEarnings !== null ? (
+              <div className="text-xs" style={{ color: "var(--muted)" }}>
+                预计收益
+                <span className="ml-1 font-mono font-semibold" style={{ color: "var(--green)" }}>
+                  ¥{todayStatus.monthEarnings.toLocaleString()}
+                </span>
+              </div>
+            ) : (
+              <div className="text-xs" style={{ color: "var(--muted)" }}>暂无工资配置</div>
+            )}
+          </div>
         </div>
       )}
 
@@ -614,6 +651,22 @@ function ManualReportForm({
   const [task, setTask] = useState("");
   const [spec, setSpec] = useState("");
   const [qty, setQty] = useState("");
+  const [customTasks, setCustomTasks] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem("pl_custom_tasks") ?? "[]"); } catch { return []; }
+  });
+  const [showCustomInput, setShowCustomInput] = useState(false);
+  const [customInput, setCustomInput] = useState("");
+
+  const addCustomTask = () => {
+    const trimmed = customInput.trim();
+    if (!trimmed) return;
+    const updated = customTasks.includes(trimmed) ? customTasks : [...customTasks, trimmed];
+    setCustomTasks(updated);
+    localStorage.setItem("pl_custom_tasks", JSON.stringify(updated));
+    setTask(trimmed);
+    setCustomInput("");
+    setShowCustomInput(false);
+  };
 
   const canSubmit = task.trim() && qty.trim();
 
@@ -658,9 +711,9 @@ function ManualReportForm({
             className="w-full rounded-2xl px-4 py-3.5 text-base outline-none mb-3"
             style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)" }}
           />
-          {/* Preset chips */}
+          {/* Preset chips + custom */}
           <div className="flex flex-wrap gap-2">
-            {TASK_PRESETS.map((t) => (
+            {[...TASK_PRESETS, ...customTasks].map((t) => (
               <button
                 key={t}
                 onClick={() => setTask(t)}
@@ -674,7 +727,45 @@ function ManualReportForm({
                 {t}
               </button>
             ))}
+            {/* Add custom task button */}
+            {!showCustomInput && (
+              <button
+                onClick={() => setShowCustomInput(true)}
+                className="text-xs px-3 py-1.5 rounded-full transition-all active:scale-95"
+                style={{ background: "var(--surface)", border: "1px dashed rgba(59,130,246,0.35)", color: "var(--accent)" }}
+              >
+                + 自定义
+              </button>
+            )}
           </div>
+          {/* Inline custom task input */}
+          {showCustomInput && (
+            <div className="flex gap-2 mt-2">
+              <input
+                value={customInput}
+                onChange={(e) => setCustomInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") addCustomTask(); if (e.key === "Escape") setShowCustomInput(false); }}
+                placeholder="输入工序名称"
+                autoFocus
+                className="flex-1 rounded-xl px-3 py-2 text-sm outline-none"
+                style={{ background: "var(--bg)", border: "1px solid rgba(59,130,246,0.4)", color: "var(--text)" }}
+              />
+              <button
+                onClick={addCustomTask}
+                className="px-3 py-2 rounded-xl text-sm font-medium"
+                style={{ background: "rgba(59,130,246,0.15)", color: "var(--accent)" }}
+              >
+                确认
+              </button>
+              <button
+                onClick={() => setShowCustomInput(false)}
+                className="px-3 py-2 rounded-xl text-sm"
+                style={{ color: "var(--muted)" }}
+              >
+                取消
+              </button>
+            </div>
+          )}
         </div>
 
         {/* 规格 */}
