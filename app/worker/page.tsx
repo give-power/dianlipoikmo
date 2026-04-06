@@ -251,15 +251,108 @@ function HistoryView({ worker, onClose }: { worker: Worker; onClose: () => void 
 
 // ─── Login Screen ─────────────────────────────────────────────────────────────
 function LoginScreen({ onLogin }: { onLogin: (w: Worker) => void }) {
-  const [workers, setWorkers] = useState<Worker[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [pin, setPin] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // 多人匹配时显示候选列表
+  const [candidates, setCandidates] = useState<Worker[] | null>(null);
+  // 降级模式：浏览全部工人列表
+  const [showList, setShowList] = useState(false);
+  const [listWorkers, setListWorkers] = useState<Worker[]>([]);
+  const [listLoading, setListLoading] = useState(false);
 
-  useEffect(() => {
+  const handlePinSubmit = async () => {
+    const trimmed = pin.trim();
+    if (!trimmed) return;
+    setSearching(true);
+    setError(null);
+    setCandidates(null);
+    try {
+      const res = await fetch("/api/workers/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: trimmed }),
+      });
+      const data = await res.json();
+      if (res.ok && !data.multiple) {
+        onLogin(data as Worker);
+      } else if (data.multiple) {
+        setCandidates(data.workers);
+      } else {
+        setError(data.error ?? "未找到匹配工人");
+      }
+    } catch {
+      setError("网络错误，请重试");
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const loadList = () => {
+    setShowList(true);
+    setListLoading(true);
     fetch("/api/workers")
       .then((r) => r.json())
-      .then((data) => { setWorkers(data); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
+      .then((data) => { setListWorkers(data); setListLoading(false); })
+      .catch(() => setListLoading(false));
+  };
+
+  // 降级：全员列表
+  if (showList) {
+    return (
+      <div className="min-h-[100dvh] grid-bg flex flex-col items-center justify-center gap-6 px-6">
+        <div className="text-center">
+          <div
+            className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5"
+            style={{ background: "rgba(59,130,246,0.12)", border: "1px solid rgba(59,130,246,0.25)" }}
+          >
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-white tracking-tight">选择你的身份</h2>
+          <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>点击你的名字继续</p>
+        </div>
+        {listLoading ? (
+          <div className="flex gap-1.5">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="w-2 h-2 rounded-full animate-bounce" style={{ background: "var(--accent)", animationDelay: `${i * 0.15}s` }} />
+            ))}
+          </div>
+        ) : (
+          <div className="w-full max-w-xs space-y-2">
+            {listWorkers.map((w) => (
+              <button
+                key={w.id}
+                onClick={() => onLogin(w)}
+                className="w-full flex items-center justify-between px-5 py-4 rounded-2xl transition-all active:scale-95"
+                style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
+                    style={{ background: "rgba(59,130,246,0.15)", color: "var(--accent)" }}
+                  >
+                    {w.name[0]}
+                  </div>
+                  <div className="text-left">
+                    <div className="text-sm font-semibold text-white">{w.name}</div>
+                    <div className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>{w.project}</div>
+                  </div>
+                </div>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 18l6-6-6-6" />
+                </svg>
+              </button>
+            ))}
+          </div>
+        )}
+        <button className="text-xs" style={{ color: "var(--muted)" }} onClick={() => setShowList(false)}>
+          ← 返回PIN登录
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[100dvh] grid-bg flex flex-col items-center justify-center gap-6 px-6">
@@ -272,44 +365,78 @@ function LoginScreen({ onLogin }: { onLogin: (w: Worker) => void }) {
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
           </svg>
         </div>
-        <h2 className="text-xl font-bold text-white tracking-tight">选择你的身份</h2>
-        <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>点击你的名字继续</p>
+        <h2 className="text-xl font-bold text-white tracking-tight">工人登录</h2>
+        <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>输入手机后4位 / 身份证后4位</p>
       </div>
 
-      {loading ? (
-        <div className="flex gap-1.5">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="w-2 h-2 rounded-full animate-bounce" style={{ background: "var(--accent)", animationDelay: `${i * 0.15}s` }} />
-          ))}
-        </div>
-      ) : (
-        <div className="w-full max-w-xs space-y-2">
-          {workers.map((w) => (
-            <button
-              key={w.id}
-              onClick={() => onLogin(w)}
-              className="w-full flex items-center justify-between px-5 py-4 rounded-2xl transition-all active:scale-95"
-              style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
-            >
-              <div className="flex items-center gap-3">
+      <div className="w-full max-w-xs space-y-3">
+        <input
+          type="tel"
+          inputMode="numeric"
+          maxLength={6}
+          value={pin}
+          onChange={(e) => { setPin(e.target.value.replace(/\D/g, "")); setError(null); setCandidates(null); }}
+          onKeyDown={(e) => e.key === "Enter" && handlePinSubmit()}
+          placeholder="输入工号 / 手机后4位"
+          className="w-full rounded-2xl px-5 py-4 text-center text-2xl font-mono tracking-[0.4em] outline-none transition-all"
+          style={{
+            background: "var(--surface)",
+            border: `1px solid ${error ? "var(--red, #ef4444)" : "var(--border)"}`,
+            color: "var(--text)",
+            letterSpacing: pin ? "0.4em" : undefined,
+          }}
+          autoFocus
+        />
+
+        {error && (
+          <div className="text-center text-sm px-2" style={{ color: "var(--red, #ef4444)" }}>
+            {error}
+          </div>
+        )}
+
+        {/* 多人匹配：显示候选列表 */}
+        {candidates && candidates.length > 0 && (
+          <div className="space-y-2">
+            <div className="text-xs text-center" style={{ color: "var(--muted)" }}>找到多个匹配，请选择：</div>
+            {candidates.map((w) => (
+              <button
+                key={w.id}
+                onClick={() => onLogin(w)}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all active:scale-95"
+                style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+              >
                 <div
-                  className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
                   style={{ background: "rgba(59,130,246,0.15)", color: "var(--accent)" }}
                 >
                   {w.name[0]}
                 </div>
                 <div className="text-left">
                   <div className="text-sm font-semibold text-white">{w.name}</div>
-                  <div className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>{w.project}</div>
+                  <div className="text-xs" style={{ color: "var(--muted)" }}>{w.project}</div>
                 </div>
-              </div>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 18l6-6-6-6" />
-              </svg>
-            </button>
-          ))}
-        </div>
-      )}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <button
+          onClick={handlePinSubmit}
+          disabled={searching || !pin.trim()}
+          className="w-full py-4 rounded-2xl text-sm font-semibold transition-all active:scale-95 disabled:opacity-40"
+          style={{ background: "var(--accent)", color: "#fff" }}
+        >
+          {searching ? "验证中..." : "确认登录"}
+        </button>
+      </div>
+
+      <button
+        className="text-xs underline-offset-2"
+        style={{ color: "var(--muted)" }}
+        onClick={loadList}
+      >
+        找不到自己？浏览工人列表
+      </button>
     </div>
   );
 }
