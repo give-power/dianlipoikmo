@@ -106,8 +106,41 @@ function CreateForm({
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrError, setOcrError] = useState<string | null>(null);
 
   const set = (k: string, v: unknown) => setForm((f) => ({ ...f, [k]: v }));
+
+  const handleOcr = async (file: File) => {
+    setOcrLoading(true); setOcrError(null);
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((res, rej) => {
+        reader.onload = () => res((reader.result as string).split(",")[1]);
+        reader.onerror = rej;
+        reader.readAsDataURL(file);
+      });
+      const r = await fetch("/api/ocr", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64: base64, mediaType: file.type || "image/jpeg", docType: "visa" }),
+      });
+      const data = await r.json();
+      if (!r.ok || data.error) { setOcrError(data.error ?? "识别失败"); return; }
+      const f = data.fields ?? {};
+      setForm((prev) => ({
+        ...prev,
+        ...(f.serialNo  ? { serialNo:  f.serialNo }  : {}),
+        ...(f.title     ? { title:     f.title }     : {}),
+        ...(f.project   ? { project:   f.project }   : {}),
+        ...(f.submitter ? { submitter: f.submitter } : {}),
+        ...(f.reason    ? { reason:    f.reason }    : {}),
+        ...(f.amount != null && f.amount !== 0 ? { amount: String(f.amount) } : {}),
+        ...(f.type && ["quantity","period"].includes(f.type) ? { type: f.type } : {}),
+      }));
+    } catch { setOcrError("识别出错，请重试"); }
+    finally { setOcrLoading(false); }
+  };
 
   const handleItemChange = (idx: number, k: keyof VisaItem, v: string) => {
     const items = form.items.map((item, i) => i === idx ? { ...item, [k]: v } : item);
@@ -185,6 +218,26 @@ function CreateForm({
           ))}
         </div>
       </div>
+
+      {/* OCR Upload */}
+      <label className="flex items-center gap-3 cursor-pointer mb-4">
+        <input
+          type="file"
+          accept="image/*"
+          className="hidden"
+          disabled={ocrLoading}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleOcr(f); e.target.value = ""; }}
+        />
+        <div
+          className="flex items-center gap-2 px-3 py-2 rounded-lg"
+          style={{ background: "rgba(59,130,246,0.06)", border: "1px dashed rgba(59,130,246,0.35)" }}
+        >
+          {ocrLoading
+            ? <span className="text-xs" style={{ color: "var(--accent)" }}>AI识别中...</span>
+            : <span className="text-xs" style={{ color: "var(--accent)" }}>拍照 / 上传签证单自动识别</span>}
+        </div>
+        {ocrError && <span className="text-xs" style={{ color: "#f87171" }}>{ocrError}</span>}
+      </label>
 
       {/* Common fields */}
       <div className="grid grid-cols-2 gap-3 mb-3">

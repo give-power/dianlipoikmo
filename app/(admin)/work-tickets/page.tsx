@@ -124,6 +124,8 @@ function TicketDrawer({
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrError, setOcrError] = useState<string | null>(null);
 
   // Auto-fill default risks when type changes
   useEffect(() => {
@@ -137,6 +139,43 @@ function TicketDrawer({
   }, [form.type]);
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  const handleOcr = async (file: File) => {
+    setOcrLoading(true); setOcrError(null);
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((res, rej) => {
+        reader.onload = () => res((reader.result as string).split(",")[1]);
+        reader.onerror = rej;
+        reader.readAsDataURL(file);
+      });
+      const r = await fetch("/api/ocr", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64: base64, mediaType: file.type || "image/jpeg", docType: "work-ticket" }),
+      });
+      const data = await r.json();
+      if (!r.ok || data.error) { setOcrError(data.error ?? "识别失败"); return; }
+      const f = data.fields ?? {};
+      setForm((prev) => ({
+        ...prev,
+        ...(f.ticketNo     ? { ticketNo:     f.ticketNo }               : {}),
+        ...(f.projectName  ? { projectName:  f.projectName }            : {}),
+        ...(f.projectCode  ? { projectCode:  f.projectCode }            : {}),
+        ...(f.workTeam     ? { workTeam:     f.workTeam }               : {}),
+        ...(f.workContent  ? { workContent:  f.workContent }            : {}),
+        ...(f.workLocation ? { workLocation: f.workLocation }           : {}),
+        ...(f.workerCount  ? { workerCount:  String(f.workerCount) }    : {}),
+        ...(f.foreman      ? { foreman:      f.foreman }                : {}),
+        ...(f.supervisor   ? { supervisor:   f.supervisor }             : {}),
+        ...(f.risks        ? { risks:        f.risks }                  : {}),
+        ...(f.riskLevel && ["一级","二级","三级","四级"].includes(f.riskLevel) ? { riskLevel: f.riskLevel } : {}),
+        ...(f.plannedStart ? { plannedStart: f.plannedStart }           : {}),
+        ...(f.plannedEnd   ? { plannedEnd:   f.plannedEnd }             : {}),
+      }));
+    } catch { setOcrError("识别出错，请重试"); }
+    finally { setOcrLoading(false); }
+  };
 
   const handleSubmit = async () => {
     if (!form.projectName.trim() || !form.workTeam.trim() || !form.workContent.trim() || !form.workLocation.trim() || !form.foreman.trim()) {
@@ -198,6 +237,33 @@ function TicketDrawer({
         <div className="flex items-center justify-between px-6 py-4 border-b shrink-0" style={{ borderColor: "var(--border)" }}>
           <span className="font-semibold text-white">{editing ? "编辑作业票" : "新建作业票"}</span>
           <button onClick={onClose} className="text-lg leading-none" style={{ color: "var(--muted)" }}>×</button>
+        </div>
+
+        {/* OCR Upload */}
+        <div className="px-6 py-3 border-b shrink-0" style={{ borderColor: "var(--border)" }}>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input type="file" accept="image/*" className="hidden" disabled={ocrLoading}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleOcr(f); e.target.value = ""; }} />
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg transition-all select-none"
+              style={{ background: "rgba(59,130,246,0.06)", border: "1px dashed rgba(59,130,246,0.35)" }}>
+              {ocrLoading ? (
+                <>
+                  <div className="w-3.5 h-3.5 rounded-full border-2 animate-spin"
+                    style={{ borderColor: "rgba(59,130,246,0.3)", borderTopColor: "var(--accent)" }} />
+                  <span className="text-xs" style={{ color: "var(--accent)" }}>AI识别中...</span>
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+                  </svg>
+                  <span className="text-xs" style={{ color: "var(--accent)" }}>拍照 / 上传图片自动识别</span>
+                </>
+              )}
+            </div>
+            {ocrError && <span className="text-xs" style={{ color: "#f87171" }}>{ocrError}</span>}
+            {!ocrLoading && !ocrError && <span className="text-xs" style={{ color: "var(--muted)" }}>支持纸质作业票拍照</span>}
+          </label>
         </div>
 
         {/* Body */}

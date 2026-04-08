@@ -12,9 +12,11 @@
     "packageJson": {
       "dependencies": [
         "npm:@netlify/plugin-nextjs@^5.15.9",
+        "npm:@prisma/adapter-pg@^5.22.0",
         "npm:@prisma/client@^5.22.0",
         "npm:@tailwindcss/postcss@4",
         "npm:@types/node@20",
+        "npm:@types/pg@^8.20.0",
         "npm:@types/react-dom@19",
         "npm:@types/react@19",
         "npm:dotenv@^17.3.1",
@@ -22,6 +24,7 @@
         "npm:eslint@9",
         "npm:framer-motion@^12.38.0",
         "npm:next@16.2.1",
+        "npm:pg@^8.20.0",
         "npm:prisma@^5.22.0",
         "npm:react-dom@19.2.4",
         "npm:react@19.2.4",
