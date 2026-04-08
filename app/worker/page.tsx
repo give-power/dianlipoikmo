@@ -376,6 +376,7 @@ type TodayStatus = {
   approvedCount: number;
   monthAttendance: number;
   monthEarnings: number | null;
+  earningsLabel: string;
 };
 
 function CheckInScreen({
@@ -418,10 +419,28 @@ function CheckInScreen({
         : [];
       const d = myCheckin ? new Date(myCheckin.createdAt) : null;
       const monthAttendance = myMonthCheckins.length;
-      const monthEarnings =
-        worker.wageType === "daily" && worker.wageRate
-          ? monthAttendance * worker.wageRate
-          : null;
+      let monthEarnings: number | null = null;
+      let earningsLabel = "预计收益";
+      if (worker.wageType === "daily" && worker.wageRate) {
+        monthEarnings = monthAttendance * worker.wageRate;
+        earningsLabel = "日薪小计";
+      } else if (worker.wageType === "monthly" && worker.wageRate) {
+        monthEarnings = worker.wageRate;
+        earningsLabel = "本月月薪";
+      } else if (worker.wageType === "piecework" && worker.wageRate) {
+        const monthApproved = Array.isArray(reports)
+          ? reports.filter(
+              (r: { status: string; createdAt: string }) =>
+                r.status === "approved" && new Date(r.createdAt) >= monthStart
+            )
+          : [];
+        monthEarnings = monthApproved.reduce(
+          (sum: number, r: { qty: string }) =>
+            sum + (parseFloat(r.qty) || 0) * worker.wageRate!,
+          0
+        );
+        earningsLabel = "计件产值";
+      }
       setTodayStatus({
         checkedIn: !!myCheckin,
         checkinTime: d
@@ -432,6 +451,7 @@ function CheckInScreen({
         approvedCount: todayReports.filter((r: { status: string }) => r.status === "approved").length,
         monthAttendance,
         monthEarnings,
+        earningsLabel,
       });
     });
   }, [worker.id, worker.wageType, worker.wageRate]);
@@ -519,7 +539,7 @@ function CheckInScreen({
             </div>
             {todayStatus.monthEarnings !== null ? (
               <div className="text-xs" style={{ color: "var(--muted)" }}>
-                预计收益
+                {todayStatus.earningsLabel}
                 <span className="ml-1 font-mono font-semibold" style={{ color: "var(--green)" }}>
                   ¥{todayStatus.monthEarnings.toLocaleString()}
                 </span>
@@ -752,6 +772,44 @@ function DoneScreen({
   onMore: () => void;
   onViewHistory: () => void;
 }) {
+  const [earnings, setEarnings] = useState<{ monthAttendance: number; monthEarnings: number | null; earningsLabel: string } | null>(null);
+
+  useEffect(() => {
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+    Promise.all([
+      fetch("/api/checkin").then((r) => r.json()).catch(() => []),
+      fetch(`/api/reports?workerId=${encodeURIComponent(worker.id)}`).then((r) => r.json()).catch(() => []),
+    ]).then(([checkins, reports]) => {
+      const monthCheckins = Array.isArray(checkins)
+        ? checkins.filter((ci: { workerId: string; createdAt: string }) =>
+            ci.workerId === worker.id && new Date(ci.createdAt) >= monthStart)
+        : [];
+      const monthAttendance = monthCheckins.length;
+      let monthEarnings: number | null = null;
+      let earningsLabel = "预计收益";
+      if (worker.wageType === "daily" && worker.wageRate) {
+        monthEarnings = monthAttendance * worker.wageRate;
+        earningsLabel = "日薪小计";
+      } else if (worker.wageType === "monthly" && worker.wageRate) {
+        monthEarnings = worker.wageRate;
+        earningsLabel = "本月月薪";
+      } else if (worker.wageType === "piecework" && worker.wageRate) {
+        const approved = Array.isArray(reports)
+          ? reports.filter((r: { status: string; createdAt: string }) =>
+              r.status === "approved" && new Date(r.createdAt) >= monthStart)
+          : [];
+        monthEarnings = approved.reduce(
+          (sum: number, r: { qty: string }) => sum + (parseFloat(r.qty) || 0) * worker.wageRate!,
+          0
+        );
+        earningsLabel = "计件产值";
+      }
+      setEarnings({ monthAttendance, monthEarnings, earningsLabel });
+    });
+  }, [worker]);
+
   return (
     <div className="min-h-[100dvh] grid-bg flex flex-col items-center justify-center gap-6 px-6">
       <div
@@ -782,6 +840,36 @@ function DoneScreen({
           ))}
         </div>
       )}
+      {/* 收益摘要 */}
+      {earnings && (
+        <div
+          className="w-full max-w-sm rounded-2xl px-5 py-4 grid grid-cols-3 gap-3"
+          style={{ background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)" }}
+        >
+          <div className="text-center">
+            <div className="text-xs mb-1" style={{ color: "var(--muted)" }}>本月出勤</div>
+            <div className="text-lg font-mono font-bold text-white">{earnings.monthAttendance}</div>
+            <div className="text-xs" style={{ color: "var(--muted)" }}>天</div>
+          </div>
+          <div className="text-center" style={{ borderLeft: "1px solid rgba(255,255,255,0.06)", borderRight: "1px solid rgba(255,255,255,0.06)" }}>
+            <div className="text-xs mb-1" style={{ color: "var(--muted)" }}>{earnings.earningsLabel}</div>
+            <div className="text-lg font-mono font-bold" style={{ color: "var(--green)" }}>
+              {earnings.monthEarnings !== null ? `¥${earnings.monthEarnings.toLocaleString()}` : "--"}
+            </div>
+            <div className="text-xs" style={{ color: "var(--muted)" }}>本月</div>
+          </div>
+          <div className="text-center">
+            <div className="text-xs mb-1" style={{ color: "var(--muted)" }}>薪资类型</div>
+            <div className="text-sm font-semibold text-white">
+              {worker.wageType === "daily" ? "日薪" : worker.wageType === "monthly" ? "月薪" : worker.wageType === "piecework" ? "计件" : "--"}
+            </div>
+            <div className="text-xs font-mono" style={{ color: "var(--muted)" }}>
+              {worker.wageRate ? `¥${worker.wageRate}` : "未配置"}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="w-full max-w-sm space-y-2.5">
         <button
           onClick={onMore}
