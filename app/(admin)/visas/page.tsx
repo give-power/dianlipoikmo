@@ -13,7 +13,7 @@ interface VisaItem {
 interface Visa {
   id: number;
   serialNo?: string;
-  type: "quantity" | "period";
+  type: string;
   title: string;
   amount: number;
   submitter: string;
@@ -31,6 +31,14 @@ interface Project {
   name: string;
 }
 
+interface VisaTypeConfig {
+  id: number;
+  code: string;
+  name: string;
+  color: string;
+  bgColor: string;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function fmtDate(iso: string) {
@@ -44,10 +52,17 @@ const STATUS_MAP = {
   rejected: { label: "已驳回", bg: "rgba(239,68,68,0.1)",    color: "#ef4444" },
 };
 
-const TYPE_MAP = {
+// Fallback for built-in types when API data not yet loaded
+const BUILTIN_TYPES: Record<string, { label: string; bg: string; color: string }> = {
   quantity: { label: "工程量签证", bg: "rgba(59,130,246,0.12)", color: "#60a5fa" },
   period:   { label: "工期签证",   bg: "rgba(168,85,247,0.12)", color: "#c084fc" },
 };
+
+function getTypeStyle(code: string, visaTypes: VisaTypeConfig[]) {
+  const found = visaTypes.find((t) => t.code === code);
+  if (found) return { label: found.name, bg: found.bgColor, color: found.color };
+  return BUILTIN_TYPES[code] ?? { label: code, bg: "rgba(100,100,100,0.12)", color: "#9ca3af" };
+}
 
 function calcItemTotal(item: VisaItem) {
   const q = parseFloat(item.qty) || 0;
@@ -58,7 +73,7 @@ function calcItemTotal(item: VisaItem) {
 const EMPTY_ITEM: VisaItem = { desc: "", qty: "", unit: "", unitPrice: "" };
 
 const EMPTY_FORM = {
-  type: "quantity" as "quantity" | "period",
+  type: "quantity" as string,
   title: "",
   submitter: "",
   project: "",
@@ -76,10 +91,12 @@ const EMPTY_FORM = {
 
 function CreateForm({
   projects,
+  visaTypes,
   onSuccess,
   onCancel,
 }: {
   projects: Project[];
+  visaTypes: VisaTypeConfig[];
   onSuccess: () => void;
   onCancel: () => void;
 }) {
@@ -148,19 +165,22 @@ function CreateForm({
     <div className="glass rounded-xl p-5 mb-2" style={{ borderLeft: "2px solid var(--accent)" }}>
       <div className="flex items-center justify-between mb-4">
         <div className="text-sm font-semibold text-white">发起签证</div>
-        {/* 类型切换 */}
+        {/* 类型切换 — 动态 */}
         <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: "var(--border)" }}>
-          {(["quantity", "period"] as const).map((t) => (
+          {(visaTypes.length > 0 ? visaTypes : [
+            { code: "quantity", name: "工程量签证" },
+            { code: "period", name: "工期签证" },
+          ] as { code: string; name: string }[]).map((t) => (
             <button
-              key={t}
-              onClick={() => set("type", t)}
+              key={t.code}
+              onClick={() => set("type", t.code)}
               className="px-3 py-1.5 text-xs font-medium transition-colors"
               style={{
-                background: form.type === t ? "var(--accent)" : "var(--bg)",
-                color: form.type === t ? "#fff" : "var(--muted)",
+                background: form.type === t.code ? "var(--accent)" : "var(--bg)",
+                color: form.type === t.code ? "#fff" : "var(--muted)",
               }}
             >
-              {TYPE_MAP[t].label}
+              {t.name}
             </button>
           ))}
         </div>
@@ -390,9 +410,9 @@ function CreateForm({
 
 // ─── Visa Card ────────────────────────────────────────────────────────────────
 
-function VisaCard({ visa, onUpdate }: { visa: Visa; onUpdate: (id: number, status: "approved" | "rejected") => void }) {
-  const s = STATUS_MAP[visa.status];
-  const t = TYPE_MAP[visa.type ?? "quantity"];
+function VisaCard({ visa, visaTypes, onUpdate }: { visa: Visa; visaTypes: VisaTypeConfig[]; onUpdate: (id: number, status: "approved" | "rejected") => void }) {
+  const s = STATUS_MAP[visa.status as keyof typeof STATUS_MAP] ?? STATUS_MAP.pending;
+  const t = getTypeStyle(visa.type ?? "quantity", visaTypes);
   const [expanded, setExpanded] = useState(false);
   const hasItems = visa.items && (visa.items as VisaItem[]).length > 0;
 
@@ -499,6 +519,7 @@ function VisaCard({ visa, onUpdate }: { visa: Visa; onUpdate: (id: number, statu
 export default function VisasPage() {
   const [visas, setVisas] = useState<Visa[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [visaTypes, setVisaTypes] = useState<VisaTypeConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -520,6 +541,9 @@ export default function VisasPage() {
     fetchAll();
     fetch("/api/projects").then((r) => r.json()).then((d) => {
       if (Array.isArray(d)) setProjects(d);
+    }).catch(() => {});
+    fetch("/api/visa-types").then((r) => r.json()).then((d) => {
+      if (Array.isArray(d)) setVisaTypes(d);
     }).catch(() => {});
   }, [fetchAll]);
 
@@ -583,6 +607,7 @@ export default function VisasPage() {
         {showForm && (
           <CreateForm
             projects={projects}
+            visaTypes={visaTypes}
             onSuccess={() => { setShowForm(false); fetchAll(); }}
             onCancel={() => setShowForm(false)}
           />
@@ -629,8 +654,12 @@ export default function VisasPage() {
               style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)" }}
             >
               <option value="all">全部类型</option>
-              <option value="quantity" style={{ background: "#0d1929" }}>工程量签证</option>
-              <option value="period" style={{ background: "#0d1929" }}>工期签证</option>
+              {(visaTypes.length > 0 ? visaTypes : [
+                { code: "quantity", name: "工程量签证" },
+                { code: "period", name: "工期签证" },
+              ]).map((t) => (
+                <option key={t.code} value={t.code} style={{ background: "#0d1929" }}>{t.name}</option>
+              ))}
             </select>
           </div>
         )}
@@ -680,7 +709,7 @@ export default function VisasPage() {
               </div>
               <div className="space-y-3">
                 {projectVisas.map((v) => (
-                  <VisaCard key={v.id} visa={v} onUpdate={handleUpdate} />
+                  <VisaCard key={v.id} visa={v} visaTypes={visaTypes} onUpdate={handleUpdate} />
                 ))}
               </div>
             </div>

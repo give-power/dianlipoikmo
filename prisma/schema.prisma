@@ -100,9 +100,75 @@ model Visa {
   // 附件
   pdfUrl          String?
   attachments     String[] @default([])
+  extraData       Json?                // 扩展字段（自定义签证类型专用数据）
   status          String   @default("pending")  // pending | approved | rejected
   createdAt       DateTime @default(now())
   updatedAt       DateTime @default(now()) @updatedAt
+}
+
+// ─── 签证类型配置（可扩展，代替硬编码 TYPE_MAP） ──────────────────────────────
+
+model VisaTypeConfig {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  name        String
+  color       String   @default("#60a5fa")
+  bgColor     String   @default("rgba(59,130,246,0.12)")
+  fieldSchema Json?    // 自定义字段定义
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+// ─── 施工作业票类型配置 ───────────────────────────────────────────────────────
+
+model WorkTicketTypeConfig {
+  id           Int      @id @default(autoincrement())
+  code         String   @unique
+  name         String
+  color        String   @default("#34d399")
+  bgColor      String   @default("rgba(52,211,153,0.12)")
+  defaultRisks String?  // 默认风险点（换行分隔）
+  isActive     Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+}
+
+// ─── 施工作业票 ───────────────────────────────────────────────────────────────
+
+model WorkTicket {
+  id              Int       @id @default(autoincrement())
+  ticketNo        String?
+  type            String    // "electrical" | "civil" | 自定义code
+  projectName     String
+  projectCode     String?
+  workTeam        String
+  riskLevel       String    @default("四级")
+  workContent     String
+  workLocation    String
+  workerCount     Int       @default(1)
+  plannedStart    DateTime?
+  plannedEnd      DateTime?
+  actualStart     DateTime?
+  actualEnd       DateTime?
+  foreman         String
+  supervisor      String?
+  assignments     String?
+  memberChanges   String?
+  risks           String?
+  preconditions   Json?     // [{label, checked}]
+  preControls     Json?     // [{label, checked}]
+  fieldChanges    String?
+  signerForeman   String?
+  signerApprover  String?
+  signerPermitter String?
+  permitTime      DateTime?
+  permitMethod    String?
+  endTime         DateTime?
+  note            String?
+  status          String    @default("draft")  // draft | active | closed
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @default(now()) @updatedAt
 }
 
 // ─── 异常纠偏 ─────────────────────────────────────────────────────────────────
