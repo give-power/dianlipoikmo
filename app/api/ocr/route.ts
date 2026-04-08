@@ -33,9 +33,9 @@ const PROMPTS: Record<string, string> = {
 };
 
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.VOLC_API_KEY;
   if (!apiKey) {
-    return Response.json({ error: "未配置 ANTHROPIC_API_KEY" }, { status: 500 });
+    return Response.json({ error: "未配置 VOLC_API_KEY" }, { status: 500 });
   }
 
   let imageBase64: string, mediaType: string, docType: string;
@@ -58,26 +58,23 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetch("https://ark.cn-beijing.volces.com/api/v3/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
+        "Authorization": `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
+        model: "doubao-vision-pro-32k",
         max_tokens: 1024,
         messages: [
           {
             role: "user",
             content: [
               {
-                type: "image",
-                source: {
-                  type: "base64",
-                  media_type: mediaType,
-                  data: imageBase64,
+                type: "image_url",
+                image_url: {
+                  url: `data:${mediaType};base64,${imageBase64}`,
                 },
               },
               { type: "text", text: prompt },
@@ -89,12 +86,12 @@ export async function POST(req: NextRequest) {
 
     if (!res.ok) {
       const err = await res.text();
-      console.error("[OCR] Claude API error:", err);
+      console.error("[OCR] Volcengine API error:", err);
       return Response.json({ error: "AI识别失败，请检查图片质量后重试" }, { status: 502 });
     }
 
     const data = await res.json();
-    const raw: string = data.content?.[0]?.text ?? "{}";
+    const raw: string = data.choices?.[0]?.message?.content ?? "{}";
 
     // 提取 JSON（兼容模型输出 markdown 代码块的情况）
     const start = raw.indexOf("{");
