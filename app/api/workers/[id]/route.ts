@@ -11,6 +11,34 @@ export async function GET(
   return Response.json(worker);
 }
 
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  try {
+    const body = await req.json();
+    const { name, project, phone, idCard, insuranceInfo, wageType, wageRate, loginPin } = body;
+    const worker = await prisma.worker.update({
+      where: { id },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(project !== undefined && { project }),
+        ...(phone !== undefined && { phone: phone || null }),
+        ...(idCard !== undefined && { idCard: idCard || null }),
+        ...(insuranceInfo !== undefined && { insuranceInfo }),
+        ...(wageType !== undefined && { wageType: wageType || null }),
+        ...(wageRate !== undefined && { wageRate: wageRate ? Number(wageRate) : null }),
+        ...(loginPin !== undefined && { loginPin: loginPin || null }),
+      },
+    });
+    return Response.json(worker);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "unknown error";
+    return Response.json({ error: `更新失败：${msg}` }, { status: 500 });
+  }
+}
+
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
