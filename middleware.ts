@@ -8,6 +8,7 @@ const WORKER_PATHS = [
   "/api/worker/chat",
   "/api/upload",
   "/api/auth/admin",
+  "/api/workers/auth",
 ];
 
 export function middleware(req: NextRequest) {
